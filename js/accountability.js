@@ -136,9 +136,20 @@ export function configWrites(existing, wanted) {
    yet, everyone is (someone has to add the first). */
 export function isAdmin(cfg, user) {
   if (!cfg.admins.length) return true;
-  if (!user) return false;
-  const email = clean(user.email).toLowerCase(), name = clean(user.name).toLowerCase();
-  return cfg.admins.some(a => (email && a.email.toLowerCase() === email) || (name && a.name.toLowerCase() === name));
+  return cfg.admins.some(a => samePerson(a, user));
+}
+
+/* Is `p` ({name, email}) the signed-in `user` ({name, email})? By email when both
+   have one; else by name, where every word of p's name must be in the user's
+   ("Brian Buenviaje" is "Brian Michael Conrad Buenviaje"). Lark's login only sends
+   the email when the app may read it, so the name is often all there is. */
+export function samePerson(p, user) {
+  if (!p || !user) return false;
+  const pe = clean(p.email).toLowerCase(), ue = clean(user.email).toLowerCase();
+  if (pe && ue) return pe === ue;
+  const words = (s) => clean(s).toLowerCase().split(/[\s.,]+/).filter(Boolean);
+  const mine = new Set(words(user.name)), theirs = words(p.name);
+  return theirs.length >= 2 && theirs.every(w => mine.has(w));
 }
 
 /* ======================= which projects, at which stage ======================= */
