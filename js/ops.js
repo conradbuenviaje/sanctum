@@ -51,9 +51,12 @@ export function schemaSpec(rules) {
   const tagsIn = (key) => (rules.tags.tables || []).includes(key);
   return {
     universe: {
-      // Everything the cards and the Universe view need; `index` is the lean set
+      // Every column (Sanctum): an accountability rule the Admin page adds can name any
+      // of them, and a column that wasn't read would look blank. `list` is what the
+      // cards and the Universe view need (and what Polaris read); `index` is the lean set
       // re-read just before a push to rule out duplicates.
-      read: ["Project Code", "Project", "Client", "PAR", "Amount (VAT-Ex.) (PHP)", "BD", "AM",
+      read: "*",
+      list: ["Project Code", "Project", "Client", "PAR", "Amount (VAT-Ex.) (PHP)", "BD", "AM",
              "RFP Received Date", "Status", "Year", "Amount (VAT-Inc.)", "Business Unit", rules.universeIgnoreField,
              // …and what the audit compares with the brief
              "MKT", "VAT%", "Project Description", "Project Start", "Project End",
@@ -510,6 +513,9 @@ export async function setTag(call, t, recordId, field, tag, add) {
    that row. `cols` = which columns hold the name and the value (variableColumns). */
 export async function addVariable(call, t, cols, name, value) {
   return createRecord(call, t, { [cols.name]: name, [cols.value]: value }, newClientToken());
+}
+export async function updateVariable(call, t, cols, recordId, value) {
+  await updateRecord(call, t, recordId, { [cols.value]: value });
 }
 export async function deleteVariable(call, t, recordId) {
   await call("POST", `${tableUrl(t)}/records/batch_delete`, { records: [recordId] });

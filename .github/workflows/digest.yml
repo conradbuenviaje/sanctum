@@ -1,0 +1,44 @@
+# The daily accountability digest (tools/notify.mjs), weekdays at 9:00 Manila (01:00 UTC).
+# Repository secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID; optional SANCTUM_URL. Optional LARK_APP_ID and
+# LARK_APP_SECRET: without them the Lark token comes from the hosted connection service's GET /token.
+# Run it by hand from the Actions tab (Run workflow), with "dry run" to see it without sending.
+name: Accountability digest
+on:
+  schedule:
+    - cron: "0 1 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print the digest in the log instead of sending it"
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency: digest
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # What was open last time, so the digest can mark what's new.
+      - uses: actions/cache/restore@v4
+        with:
+          path: .digest-state.json
+          key: digest-state-${{ github.run_id }}
+          restore-keys: digest-state-
+      - run: node tools/notify.mjs ${{ inputs.dry_run && '--dry-run' || '' }}
+        env:
+          LARK_APP_ID: ${{ secrets.LARK_APP_ID }}
+          LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SANCTUM_URL: ${{ secrets.SANCTUM_URL }}
+      - if: success() && !inputs.dry_run
+        uses: actions/cache/save@v4
+        with:
+          path: .digest-state.json
+          key: digest-state-${{ github.run_id }}

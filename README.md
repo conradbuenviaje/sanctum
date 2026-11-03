@@ -1,6 +1,14 @@
-# Polaris
+# Sanctum
 
-<img src="img/polaris-icon.svg" alt="Polaris logo" width="96" align="right">
+<img src="img/polaris-icon.svg" alt="Sanctum logo" width="96" align="right">
+
+Sanctum is the operations team's view of **who is responsible and accountable for every
+project**. It checks every project from Jan 2025 on for the fields it must have at its
+stage, and shows each blank with the person **Responsible** for filling it and the person
+**Accountable** for it being filled. A daily Telegram digest tells each person what's theirs.
+See [Accountability](#accountability).
+
+Sanctum is a fork of Polaris. Everything Polaris does is still there, under **Data Audit**:
 
 Polaris keeps the **🌌 Universe** and **💸 Collections** Lark tables in step with
 what gets filed. Each change the trackers need shows up as a card;
@@ -24,6 +32,7 @@ phone and on a PC, and every change is made as you, with your own Lark login.
 
 ## Contents
 
+- [Accountability](#accountability)
 - [Using Polaris](#using-polaris)
 - [The push queue](#the-push-queue)
 - [What shows up as a card](#what-shows-up-as-a-card)
@@ -48,6 +57,76 @@ phone and on a PC, and every change is made as you, with your own Lark login.
 - [Files](#files)
 
 ---
+
+## Accountability
+
+The rules are in [`js/accountability.js`](js/accountability.js) (pure: the page and the digest
+share it); the starting rules are `ACCOUNTABILITY` in [`js/config.js`](js/config.js).
+
+**Which projects.** Every Universe row whose RFP Received Date (else Year, else the year
+in its project code) is on or after the start date (Jan 1, 2025), except rows tagged with
+a skipped custom tag (*Hidden*).
+
+**Which fields, from when.** Each rule names a column of the Universe, ANDON or
+Collections (or *has a row there at all*) and the first Status it's required at. It's then
+required at every later Status, in this order: For CE/Pitch Creation → For Pitching → Won -
+Awaiting CE Signature → Signed CE → For Collection → For Closing → Fully Closed. A Mancom
+Phase of *7. Won* counts as at least Won. A rule can also apply to Lost, Stalled and
+Archived projects. Notes:
+- An ANDON or Collections column isn't asked for while the project has no row there: the
+  *ANDON row* / *Collections row* rule asks for the row once instead.
+- Invoice details are asked only of Collections rows that are *For Collection*.
+- A blank or unknown Status counts as the first stage.
+
+**Who.** Every rule has a Responsible and an Accountable role. BD and AM come from the
+project's Universe row, PM from its ANDON row's PM (LEAD). Universe Keeper, Ops Lead and
+Finance (and any role added on the Admin page) are the same people for every project. When a
+role has nobody in it, the blank goes to the first of the fallback roles that has someone
+(AM, then BD, then Ops Lead); with nobody there either, it's listed under *Nobody (unassigned)*.
+
+**The board** (`#/accountability`, the home page) lists the blanks by person (what each is
+responsible for, and how many more they're accountable for) or by project, with a chip per
+field to show only that one, and **Mine**. Click a blank to open its row in the row editor
+and fill it there (ANDON or Collections rows that don't exist yet open the Universe row).
+
+**The Admin page** (`#/admin`) edits a draft of the rules, roles, Telegram handles, start
+date, skipped tags, fallback order and admins; **Save changes** writes it to the Variables
+table (one row per rule, role, person or setting, named `accountability_*`, its JSON in
+Value). Until something is saved there, the starting rules apply. With no admins saved,
+anyone who can edit the Variables table can change them; after that only the admins (the
+page checks; Lark's own permissions on the Variables table are what really protect it).
+
+**The daily digest** ([`tools/notify.mjs`](tools/notify.mjs)) posts the blanks to a Telegram
+group every weekday at 9:00 Manila, by person, @mentioning the handles set on the Admin page.
+It lists project codes, names, stages and fields only (no amounts, no clients), marks what's
+new since the last digest and says how long the oldest blank has been open. It only reads Lark.
+To set it up:
+1. Make a bot with @BotFather, add it to the team's group, and get the group's chat id
+   (for example from `https://api.telegram.org/bot<token>/getUpdates` after posting in the group).
+2. In the GitHub repository's *Settings > Secrets and variables > Actions*, add
+   `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and (optional) `SANCTUM_URL`.
+   **Lark:** with no Lark secret set, the digest gets its token from the hosted connection
+   service's `GET /token` (Polaris's Lark app, the service's documented "Quick Start", see
+   [mineski-stephen/lark-api-test](https://github.com/mineski-stephen/lark-api-test);
+   [`tools/service-token.mjs`](tools/service-token.mjs)). To read as another app instead, add
+   `LARK_APP_ID` and `LARK_APP_SECRET`: that app needs `bitable:app` in a published version and
+   read access to the Universe Base (and the ANDON Base, for the ANDON rules). If the service
+   stops handing out tokens (the security note under [Security and privacy](#security-and-privacy)
+   would end that), set those two secrets and nothing else changes.
+3. *Actions > Accountability digest > Run workflow* with **dry run** ticked prints it in the
+   log; unticked, it sends. The schedule is in [`.github/workflows/digest.yml`](.github/workflows/digest.yml).
+
+Locally: put the same values in `.env`, then `npm run notify -- --dry-run`.
+
+**Known limits.**
+- The Lark app can't open the ANDON Base today (only users can). In the browser this
+  doesn't matter (it reads as you), but the digest skips the ANDON rules (PM (LEAD), TRIBE,
+  Business Unit, Tools, Event dates, Approval, *ANDON row*) and says so at its bottom, until
+  Project Management shares that Base with the app.
+- Lark's user info gives the signed-in person's name and email, not their Lark id, so
+  **Mine** and the admin check match by email (or name).
+- Collections columns beyond the ones Polaris reads can't have rules yet (the board says so);
+  add them to `collections.read` in [`js/ops.js`](js/ops.js). The Universe is read in full.
 
 ## Using Polaris
 

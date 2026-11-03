@@ -47,8 +47,8 @@
   <!-- Where this page may send data: itself and the hosted connection service (a local
        address too, for testing on this computer). A login token can't go anywhere else. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://lark-proxy-dwiw.onrender.com http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self'">
-  <title>Polaris · Mineski</title>
-  <meta name="description" content="Polaris moves new Project Briefs, PARs and invoices into the Universe.">
+  <title>Sanctum · Mineski</title>
+  <meta name="description" content="Sanctum shows the operations team every project field left blank, and who is responsible and accountable for filling it.">
   <meta name="theme-color" content="#F5F6FA" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0C0E1F" media="(prefers-color-scheme: dark)">
   <link rel="icon" type="image/svg+xml" href="img/polaris-icon.svg">
@@ -67,7 +67,7 @@
     (function () {
       var v = window.APP_BUILD = Date.now().toString(36);
       var files = ["js/config.js", "js/sync.js", "js/ops.js", "js/icons.js", "js/ui.js", "js/polaris-ui.js", "js/errors.js",
-                   "js/service.js", "js/settings.js", "js/net.js", "js/auth.js", "js/inbox.js", "js/universe.js", "js/collections.js", "js/andon.js", "js/sources.js", "js/queue.js", "js/rowdoc.js", "js/app.js"];
+                   "js/service.js", "js/settings.js", "js/net.js", "js/auth.js", "js/inbox.js", "js/universe.js", "js/collections.js", "js/andon.js", "js/sources.js", "js/queue.js", "js/rowdoc.js", "js/accountability.js", "js/board.js", "js/admin.js", "js/app.js"];
       var map = { imports: {} };
       files.forEach(function (f) { map.imports[new URL(f, location.href).href] = new URL(f + "?v=" + v, location.href).href; });
       document.write('<link rel="stylesheet" href="css/theme.css?v=' + v + '">');
@@ -86,16 +86,18 @@
   <div class="bg" aria-hidden="true"></div>
 
   <header class="topbar">
-    <a class="brand" href="#/" aria-label="Polaris home">
+    <a class="brand" href="#/" aria-label="Sanctum home">
       <img class="brand-mark" src="img/polaris-icon.svg" alt="" width="34" height="34">
-      <span class="brand-name">Polaris</span>
+      <span class="brand-name">Sanctum</span>
       <span class="brand-ver" id="appVersion"></span>
       <span class="env" id="envBadge" hidden></span>
     </a>
     <div class="top-right">
       <a class="override-badge" id="overrideBadge" href="#/settings" hidden>Overridden</a>
       <nav class="nav" aria-label="Main">
+        <a href="#/accountability" data-nav="accountability" id="boardLink" hidden>Accountability</a>
         <a href="#/briefs" data-nav="work" id="workLink" hidden>Data Audit</a>
+        <a href="#/admin" data-nav="admin" id="adminLink" hidden>Admin</a>
         <!-- Pushes waiting for Lark; hovering shows the next five (js/queue.js). -->
         <div class="queue-wrap">
           <a href="#/queue" data-nav="queue" id="queueLink" hidden>Queue <span class="count" id="queueCount"></span><span class="count count-bad" id="queueBad" hidden></span></a>
@@ -117,7 +119,7 @@
     <div class="banner callout callout-err" id="blockNote" role="alert" hidden>
       <span class="i" data-icon="alert" aria-hidden="true"></span>
       <div>
-        <p><b>Polaris can't reach its connection service.</b> An ad blocker or privacy extension is probably blocking it.</p>
+        <p><b>Sanctum can't reach its connection service.</b> An ad blocker or privacy extension is probably blocking it.</p>
         <p>Allow <code id="blockHost">lark-proxy-dwiw.onrender.com</code> in your blocker (or pause it on this page), then reload.</p>
       </div>
       <button type="button" class="btn btn-sm" id="reloadBtn">Reload</button>
@@ -127,8 +129,8 @@
     <section class="view view-login" data-view="login">
       <div class="login-card">
         <img class="login-mark" src="img/polaris-icon.svg" alt="" width="88" height="88">
-        <h1>Polaris</h1>
-        <p class="lede">Push new briefs, PARs and invoices into the Universe.</p>
+        <h1>Sanctum</h1>
+        <p class="lede">See every project field left blank, and who is responsible and accountable for filling it.</p>
         <button type="button" class="btn btn-primary btn-lg" id="loginBtn"><span class="label">Log in with Lark</span></button>
         <p class="hint">You'll stay logged in for about 2 hours.</p>
         <div class="callout callout-warn" id="loginMsg" role="status" hidden></div>
@@ -284,6 +286,40 @@
       </section>
     </section>
 
+    <!-- Accountability: every blank the rules ask for, by person or project (js/board.js) -->
+    <section class="view view-board" data-view="accountability" aria-labelledby="boardTitle">
+      <div class="page-head">
+        <div><h1 id="boardTitle">Accountability</h1><p class="lede sm" id="boardSub"></p></div>
+        <div class="page-tools">
+          <label class="search search-sm">
+            <span class="i" data-icon="search" aria-hidden="true"></span>
+            <span class="sr-only">Search the board</span>
+            <input type="search" id="boardSearch" placeholder="Search code, project, person, field…" autocomplete="off" spellcheck="false">
+          </label>
+          <button type="button" class="chip-opt" id="boardMine" aria-pressed="false" title="Only blanks you're responsible or accountable for"><span class="i" data-icon="user" aria-hidden="true"></span> Mine</button>
+          <div class="seg" id="boardGroup" role="radiogroup" aria-label="Group by">
+            <button type="button" role="radio" data-group="person"><span class="i" data-icon="users" aria-hidden="true"></span> People</button>
+            <button type="button" role="radio" data-group="project"><span class="i" data-icon="table" aria-hidden="true"></span> Projects</button>
+          </div>
+          <button type="button" class="icon-btn" id="boardRefresh" aria-label="Refresh" title="Refresh"><span class="i" data-icon="refresh" aria-hidden="true"></span></button>
+        </div>
+      </div>
+      <div class="board-notes" id="boardNotes"></div>
+      <div class="chips board-fields" id="boardFields" aria-label="Show one field"></div>
+      <div class="board-list" id="boardList"></div>
+    </section>
+
+    <!-- Admin: the accountability rules, roles, Telegram handles, admins (js/admin.js) -->
+    <section class="view view-admin" data-view="admin" aria-labelledby="adminTitle">
+      <div class="page-head"><div><h1 id="adminTitle">Admin</h1><p class="lede sm">What every project must have filled, and who's on it. Saved in the Variables table in Lark, for everyone and for the daily digest.</p></div></div>
+      <div class="settings adm" id="adminBox"></div>
+      <div class="adm-bar" id="adminBar" hidden>
+        <span>You have changes that aren't saved.</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="adminDiscard">Discard</button>
+        <button type="button" class="btn btn-primary btn-sm" id="adminSave"><span class="label">Save changes</span></button>
+      </div>
+    </section>
+
     <!-- Queue: pushes waiting for Lark, failed and finished --------------------->
     <section class="view view-queue" data-view="queue" aria-labelledby="queueTitle">
       <div class="page-head">
@@ -400,7 +436,7 @@
 
   <div class="toasts" id="toasts" aria-live="polite"></div>
 
-  <!-- Boot watchdog: if Polaris never starts (a module failed to load, or the page was
+  <!-- Boot watchdog: if Sanctum never starts (a module failed to load, or the page was
        opened from a file), say so calmly instead of leaving a dead page. app.js sets
        <html data-booted> at the end of its start-up. -->
   <script>
@@ -409,7 +445,7 @@
       var d = document.createElement("div");
       d.className = "banner callout callout-err";
       d.setAttribute("role", "alert");
-      d.innerHTML = '<div><p><b>Polaris couldn\u2019t start.</b> Reload the page. If it keeps happening, open it from its web address (not a saved file).</p></div>' +
+      d.innerHTML = '<div><p><b>Sanctum couldn\u2019t start.</b> Reload the page. If it keeps happening, open it from its web address (not a saved file).</p></div>' +
                     '<button type="button" class="btn btn-sm" onclick="location.reload()">Reload</button>';
       (document.getElementById("main") || document.body).prepend(d);
     }, 8000);

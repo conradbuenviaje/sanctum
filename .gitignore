@@ -6,3 +6,5 @@ tests/.preview-fixture.json
 !.env.example
 # Logo working files and local tooling
 __pycache__/
+# What the daily digest saw last time (tools/notify.mjs)
+.digest-state.json

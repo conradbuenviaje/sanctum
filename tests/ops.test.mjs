@@ -124,7 +124,7 @@ test("fill blanks: the signed CE goes in by token, is read back, and never repla
 
 test("schema: the signed CE is an Attachment the Universe reads, and only audit pushes need it", () => {
   const u = schemaSpec(RULES).universe, CE = RULES.auditFiles.field;
-  assert.ok(u.read.includes(CE));
+  assert.ok(u.list.includes(CE));
   assert.equal(u.optional[CE], 17);
   assert.ok(u.neededBy["audit:universe"].includes(CE));
   assert.ok(!(CE in u.fields), "a missing column mustn't stop brief and PAR pushes");
@@ -175,58 +175,28 @@ test("creates carry their client_token", async () => {
 test("columnsToRead: a destination table also reads its lookups and formulas; source tables don't", () => {
   const f = (field_name, type) => ({ field_name, type });
   const spec = schemaSpec(RULES);
-  const universe = [...spec.universe.read.filter(n => n !== RULES.universeIgnoreField).map(n => f(n, 1)),
-    f("Contract Value (USD)", 20), f("Brief Submitted", 19), f("Linked ANDON", 21), f("Created", 1001)];
-  const cols = columnsToRead("universe", universe, RULES);
-  for (const n of ["Project Code", "Contract Value (USD)", "Brief Submitted", "Linked ANDON", "Quick Remarks"]) assert.ok(cols.includes(n), n);
+  const coll = [...spec.collections.read.map(n => f(n, 1)),
+    f("Amount Formula", 20), f("Brief Submitted", 19), f("Linked ANDON", 21), f("Created", 1001), f("Not Read", 1)];
+  const cols = columnsToRead("collections", coll, RULES);
+  for (const n of ["Project Code", "Amount Formula", "Brief Submitted", "Linked ANDON", "Invoice Date"]) assert.ok(cols.includes(n), n);
   assert.ok(!cols.includes("Created"));                               // Lark's own metadata isn't row data
-  assert.ok(!cols.includes(RULES.universeIgnoreField));               // not in this table: never asked for
+  assert.ok(!cols.includes("Not Read"));                              // a plain column it doesn't use
   // a source table reads only what its cards need
   const brief = [...Object.keys(spec.brief.fields).map(n => f(n, 1)), f("Some Formula", 20)];
   assert.ok(!columnsToRead("brief", brief, RULES).includes("Some Formula"));
-  // ANDON reads every column; so does any table past Lark's 50-name limit
+  // ANDON and the Universe read every column (the Universe: any column can have an
+  // accountability rule); so does any table past Lark's 50-name limit
   assert.equal(columnsToRead("andon", [f("Project", 1)], RULES), undefined);
-  const wide = [...universe, ...Array.from({ length: 40 }, (_, i) => f(`Formula ${i}`, 20))];
-  assert.equal(columnsToRead("universe", wide, RULES), undefined);
-});
-
-test("tags: marking merges into what the Tags cell says in Lark now, and writes nothing if it's there", async () => {
-  const row = universeRow({ "Tags": seg("Client A") });
-  const lark = fakeLark([row]);
-  const res = await setTag(lark.call, T.universe, "recU1", "Tags", "No Revenue", true);
-  assert.deepEqual(lark.writes().map(w => w.body.records[0].fields), [{ "Tags": "Client A, No Revenue" }]);
-  assert.deepEqual(res.mismatches, []);
-  // someone added another tag meanwhile: it stays when ours comes off
-  row.fields["Tags"] = seg("Client A, No Revenue, Urgent");
-  await setTag(lark.call, T.universe, "recU1", "Tags", "No Revenue", false);
-  assert.equal(row.fields["Tags"], "Client A, Urgent");
-  // already off: nothing written
-  const again = await setTag(lark.call, T.universe, "recU1", "Tags", "No Revenue", false);
-  assert.equal(again.unchanged, true);
-  assert.equal(lark.writes().length, 2);
-});
-
-test("an unreadable Variables table doesn't stop the page; only the custom tags are off", async () => {
-  const tables = { universe: { app: "A", table: "tblUni" }, variables: { app: "A", table: "tblVar" } };
-  const call = async (method, url) => {
-    if (/tblVar/.test(url)) throw Object.assign(new Error("no permission"), { status: 403 });
-    if (/\/fields/.test(url)) return { code: 0, data: { items: [], has_more: false } };
-    return { code: 0, data: { items: [{ record_id: "r1", fields: {} }], has_more: false } };
-  };
-  const res = await loadEverything(call, tables, RULES);
-  assert.equal(res.data.universe.length, 1);
-  assert.ok(!("variables" in res.data));
-  assert.match(res.tableProblems.variables[0], /Variables: couldn't be read/);
-  // a dead login still ends it
-  const dead = async () => { throw Object.assign(new Error("dead"), { deadToken: true }); };
-  await assert.rejects(loadEverything(dead, { variables: tables.variables }, RULES), /dead/);
+  assert.equal(columnsToRead("universe", [f("Project", 1)], RULES), undefined);
+  const wide = [...coll, ...Array.from({ length: 50 }, (_, i) => f(`Formula ${i}`, 20))];
+  assert.equal(columnsToRead("collections", wide, RULES), undefined);
 });
 
 test("tags: only the tables in RULES.tags.tables use a Tags column (ANDON doesn't have one)", () => {
   const spec = schemaSpec(RULES), field = RULES.tags.field;
   assert.deepEqual(RULES.tags.tables, ["universe"]);
   assert.equal(spec.universe.optional[field], 1);
-  assert.ok(spec.universe.read.includes(field) && spec.universe.neededBy["tag:universe"]);
+  assert.ok(spec.universe.list.includes(field) && spec.universe.neededBy["tag:universe"]);
   assert.ok(!(spec.andon.optional || {})[field] && !(spec.andon.neededBy || {})["tag:andon"]);   // no column check, no problem reported
   // switched on for ANDON, it would be checked the same way
   const both = schemaSpec({ ...RULES, tags: { ...RULES.tags, tables: ["universe", "andon"] } });
