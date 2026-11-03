@@ -22,7 +22,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { RULES, ACCOUNTABILITY, TABLE_LINKS, SERVICES, LARK } from "../js/config.js";
 import { loadEverything, loadFields, loadRecords, parseBaseLink } from "../js/ops.js";
 import { variableColumns } from "../js/sync.js";
-import { configFrom, accountabilityItems, nextState, digestMessages } from "../js/accountability.js";
+import { configFrom, accountabilityItems, dismissalsFrom, nextState, digestMessages } from "../js/accountability.js";
 import { tenantToken, makeCall, tables as allTables, parseEnv } from "../tests/lark-node.mjs";
 import { serviceToken } from "./service-token.mjs";
 
@@ -66,6 +66,7 @@ const cfg = configFrom(ACCOUNTABILITY, data.variables, cols);
 const res = accountabilityItems(data, cfg, {
   fields, read: columns, tagField: RULES.tags.field,
   forCollection: RULES.collectionStages.forCollection, invalid: RULES.invalidStatuses,
+  dismissed: dismissalsFrom(data.variables, cols, ACCOUNTABILITY.dismissVariable),
 });
 
 let previous = null;
@@ -74,7 +75,7 @@ const now = Date.now();
 const state = nextState(res.items, previous, now);
 const dateLabel = new Date(now).toLocaleDateString("en-PH", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Manila" });
 const messages = digestMessages(res.items, cfg, {
-  now, state, previous, dateLabel,
+  now, state, previous, dateLabel, dismissedCount: res.dismissed.length,
   perPerson: ACCOUNTABILITY.digest.perPerson,
   pageUrl: env("SANCTUM_URL") || ACCOUNTABILITY.digest.pageUrl,
   notes: [...cfg.problems, ...res.notes],   // (a column only a Polaris push needs is the log's business, not the team's)

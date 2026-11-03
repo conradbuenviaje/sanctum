@@ -1,11 +1,15 @@
 /* The Accountability board (#/accountability): every blank the accountability rules
    ask for (js/accountability.js), by person (what each is Responsible for filling and
    Accountable for) or by project. A field opens its row in the row editor
-   (js/inbox.js), so it can be filled right there; the edit goes through the queue. */
+   (js/inbox.js), so it can be filled right there; the edit goes through the queue.
+   A blank that doesn't apply can be dismissed, with a reason (kept in the Variables
+   table with who and when, for everyone and the digest), and restored. */
 
-import { byPerson, byProject, fieldCounts, itemMatches, samePerson, UNASSIGNED } from "./accountability.js";
-import { $, h, ic, store, recall } from "./ui.js";
-import { describe } from "./net.js";
+import { ACCOUNTABILITY } from "./config.js";
+import { byPerson, byProject, fieldCounts, itemMatches, samePerson, dismissalValue, UNASSIGNED } from "./accountability.js";
+import { addVariable, deleteVariable } from "./ops.js";
+import { $, h, ic, store, recall, toast, confirmSheet } from "./ui.js";
+import { describe, isDeadToken } from "./net.js";
 
 const KEY = { group: "polaris.boardGroup", mine: "polaris.boardMine" };
 
@@ -56,11 +60,67 @@ export function createBoard(ctx) {
     for (const btn of $("#boardGroup").querySelectorAll("button")) btn.setAttribute("aria-checked", String(btn.dataset.group === B.group));
     $("#boardMine").setAttribute("aria-pressed", String(B.mine));
 
-    if (!items.length) {
-      list.replaceChildren(h("p", { class: "empty small" }, A.items.length ? "Nothing matches." : "Nothing is missing. 🎉"));
+    const cards = !items.length ? [h("p", { class: "empty small" }, A.items.length ? "Nothing matches." : "Nothing is missing. 🎉")]
+      : B.group === "person" ? personCards(items, A.cfg) : projectCards(items);
+    list.replaceChildren(...cards, ...dismissedList(A.dismissed || []));
+  }
+
+  /* ---- dismissing a blank (with a reason) and restoring it ---- */
+  const canDismiss = () => !!ctx.tables.variables && !!S.data.variables && !!S.tagCols && ctx.canWriteFor("variables");
+  async function dismiss(it) {
+    if (!canDismiss()) {
+      toast("Blanks can't be dismissed right now.", { type: "error", detail: ctx.problemsFor("variables")[0] || "The Variables table couldn't be read, or your login can only read." });
       return;
     }
-    list.replaceChildren(...(B.group === "person" ? personCards(items, A.cfg) : projectCards(items)));
+    const reason = h("textarea", { id: "dismissReason", rows: "3", maxlength: "500",
+      placeholder: "e.g. Billed outside Collections, per Finance (Mancom Oct 28)" });
+    const ok = await confirmSheet({
+      title: `Dismiss “${it.label}”?`, icon: "x", confirm: "Dismiss", busyText: "Dismissing…",
+      sub: `${it.code || "(no code)"} ${it.project || ""}`.trim(),
+      body: h("div", { class: "field" },
+        h("label", { class: "field-label", for: "dismissReason" }, "Why doesn't this need filling?"), reason,
+        h("p", { class: "set-help" }, "Required. It's kept with your name and the date, everyone can see it, and anyone can restore the blank.")),
+      run: async () => {
+        const value = dismissalValue(it, reason.value, (S.user && S.user.name) || "");   // throws if there's no real reason
+        if (!ctx.ensureTime()) throw new Error("Your login is about to end. Log in again, then try it.");
+        try {
+          const rec = await ctx.track(() => addVariable(ctx.call, ctx.tables.variables, S.tagCols, ACCOUNTABILITY.dismissVariable, value));
+          S.data.variables.push({ record_id: rec.record_id, fields: { [S.tagCols.name]: ACCOUNTABILITY.dismissVariable, [S.tagCols.value]: value } });
+        } catch (e) {
+          throw new Error(isDeadToken(e) ? "Your login has ended. Log in again, then try it." : describe(e));
+        }
+        ctx.recompute();
+      },
+    });
+    if (ok) toast(`Dismissed ${it.label} on ${it.code || it.project}.`, { type: "success", detail: "It's under Dismissed at the bottom, with your reason." });
+    ctx.render();
+  }
+  async function restore(it) {
+    if (!canDismiss() || !ctx.ensureTime()) return;
+    try {
+      await ctx.track(() => deleteVariable(ctx.call, ctx.tables.variables, it.dismissal.id));
+      S.data.variables = S.data.variables.filter(r => r.record_id !== it.dismissal.id);
+      ctx.recompute();
+      toast(`${it.label} on ${it.code || it.project} is back on the list.`, { type: "success" });
+    } catch (e) {
+      if (!isDeadToken(e)) toast("Couldn't restore it.", { type: "error", detail: describe(e) });
+    }
+    ctx.render();
+  }
+  function dismissedList(list) {
+    const q = B.query.trim().toLowerCase();
+    const shown = list.filter(it => !q || itemMatches(it, q) || it.dismissal.reason.toLowerCase().includes(q));
+    if (!shown.length) return [];
+    return [h("details", { class: "card acc-card acc-dismissed", open: B.open.has("dismissed") || null,
+      ontoggle: (e) => { if (e.target.open) B.open.add("dismissed"); else B.open.delete("dismissed"); } },
+      h("summary", null, `Dismissed with a reason · ${shown.length}`),
+      h("ul", { class: "acc-list" }, shown.map(it => h("li", { class: "acc-proj" },
+        h("div", { class: "acc-proj-head" },
+          h("span", { class: "mono" }, it.code || "(no code)"), h("span", { class: "acc-name" }, it.project || "(no name)"),
+          h("span", { class: "badge badge-muted" }, it.label)),
+        h("p", { class: "acc-reason" }, `“${it.dismissal.reason}”`),
+        h("p", { class: "acc-meta" }, [it.dismissal.by || "Someone", it.dismissal.at ? fmtWhen(it.dismissal.at) : ""].filter(Boolean).join(" · "),
+          " ", h("button", { type: "button", class: "linkish", disabled: !canDismiss() || null, onclick: () => restore(it) }, "Restore"))))))];
   }
 
   /* ---- by person ---- */
@@ -116,8 +176,10 @@ export function createBoard(ctx) {
   function fieldBtn(it, other, otherSide) {
     const title = [`${it.label} is blank`, it.rowTable === "universe" && it.table !== "universe" ? `(opens the Universe row: there's no ${it.label.replace(/ row$/, "")} row yet)` : "",
                    other ? `${otherSide}: ${whoText(other)}` : ""].filter(Boolean).join(" · ");
-    return h("button", { type: "button", class: "acc-field", title, onclick: () => ctx.openRow(it.rowTable, it.rowId) },
-      it.label, ic("pencil"));
+    return h("span", { class: "acc-chip" },
+      h("button", { type: "button", class: "acc-field", title, onclick: () => ctx.openRow(it.rowTable, it.rowId) }, it.label, ic("pencil")),
+      h("button", { type: "button", class: "acc-dismiss", title: `Dismiss ${it.label} with a reason`, "aria-label": `Dismiss ${it.label} on ${it.code || it.project}`,
+        onclick: () => dismiss(it) }, ic("x")));
   }
   const whoText = (r) => (r.unassigned ? "nobody" : `${r.people.map(p => p.name).join(", ")}${r.via ? ` (no ${r.role}, so the ${r.via})` : ` (${r.role})`}`);
   const who = (r) => h("span", { class: r.unassigned ? "muted" : null, title: whoText(r) },
@@ -131,4 +193,5 @@ export function createBoard(ctx) {
   return { render };
 }
 
+const fmtWhen = (ms) => new Date(ms).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Manila" });
 const fmtDay = (iso) => new Date(`${iso}T00:00:00+08:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Manila" });

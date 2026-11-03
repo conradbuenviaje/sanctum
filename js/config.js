@@ -9,7 +9,7 @@
 
 /* version: bump it with every release and add an entry to CHANGELOG.md (newest first, same number).
    The top bar shows it beside the name, so people can see at a glance which version they're running. */
-export const APP = { name: "Sanctum", key: "polaris", version: "2.0.0", env: "live" };   // env: "live" | "test"
+export const APP = { name: "Sanctum", key: "polaris", version: "2.1.0", env: "live" };   // env: "live" | "test"
 export const ENV_LABEL = APP.env === "test" ? "Test copy" : "";         // shown in the header, never a gate
 
 /* The connection service: the shared Lark proxy (Render). `service` is the name its
@@ -177,6 +177,9 @@ export const ACCOUNTABILITY = {
   // Variables rows the Admin page reads and writes (the Variable column's value for each kind).
   variables: { rule: "accountability_rule", role: "accountability_role", person: "accountability_person",
                setting: "accountability_setting", admin: "accountability_admin" },
+  // A blank dismissed on the board with a reason: one Variables row each (not a setting: the
+  // Admin page's Save leaves these alone).
+  dismissVariable: "accountability_dismissal",
   // Projects whose RFP Received Date (else Year, else the year in the code) is before this aren't checked.
   since: "2025-01-01",
   // Universe rows marked with one of these custom tags aren't checked.

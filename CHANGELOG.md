@@ -9,6 +9,16 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.1.0 · Nov 3, 2026
+
+- **Dismiss a blank, with a reason.** Each blank on the Accountability board has a **×**:
+  say why it doesn't need filling (required), and it leaves the board and the daily digest.
+  It's kept under **Dismissed with a reason** at the bottom, with who dismissed it and when,
+  for everyone, and **Restore** puts it back. The digest says how many are dismissed.
+- **Admin page:** add someone by email when they aren't a BD, AM or PM anywhere yet, and
+  admins are recognised by their Lark name when Lark doesn't send the email.
+- **Login page:** says so when the connection service doesn't accept the site it's on.
+
 ## 2.0.0 · Nov 3, 2026
 
 **Polaris is now Sanctum**, the operations team's tool for making sure every project has

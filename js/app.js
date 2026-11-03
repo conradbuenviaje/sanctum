@@ -21,7 +21,7 @@ import { createCollections } from "./collections.js";
 import { createAndon } from "./andon.js";
 import { createSources, SOURCE_KINDS } from "./sources.js";
 import { createQueue } from "./queue.js";
-import { configFrom, accountabilityItems } from "./accountability.js";
+import { configFrom, accountabilityItems, dismissalsFrom } from "./accountability.js";
 import { createBoard } from "./board.js";
 import { createAdmin } from "./admin.js";
 
@@ -463,7 +463,8 @@ function recompute() {
   const acc = configFrom(ACCOUNTABILITY, d.variables, S.tagCols);
   S.acc = { cfg: acc, ...accountabilityItems({ universe: d.universe, andon: d.andon, collections: d.collections }, acc, {
     fields: S.fields, read: S.columns || {}, tagField: RULES.tags.field,
-    forCollection: RULES.collectionStages.forCollection, invalid: RULES.invalidStatuses }) };
+    forCollection: RULES.collectionStages.forCollection, invalid: RULES.invalidStatuses,
+    dismissed: dismissalsFrom(d.variables, S.tagCols, ACCOUNTABILITY.dismissVariable) }) };
   S.clients = [...new Set(uni.rows.map(r => r.client).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   S.statusOrder = selectOptions(field("universe", "Status"));
   S.colStatusOrder = selectOptions(field("collections", "Status"));

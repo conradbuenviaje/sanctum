@@ -428,3 +428,17 @@ main { padding-bottom: 120px; }
   .top-right::-webkit-scrollbar { display: none; }
   .top-right > * { flex-shrink: 0; }
 }
+
+/* A blank's chip: open it to fill (the label), or dismiss it with a reason (x). */
+.acc-chip { display: inline-flex; align-items: stretch; }
+.acc-chip .acc-field { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right-width: 0; }
+.acc-dismiss { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 26px; padding: 0;
+               border: 1px dashed var(--warn); border-left-style: solid; border-radius: 0 var(--r-pill) var(--r-pill) 0;
+               background: var(--warn-soft); color: var(--warn); cursor: pointer; }
+.acc-dismiss:hover { background: var(--warn); color: var(--surface); }
+.acc-dismiss .i { width: 11px; height: 11px; }
+.acc-dismissed { grid-column: 1 / -1; }
+.acc-dismissed summary { cursor: pointer; font-weight: 800; font-size: 14px; }
+.acc-dismissed[open] summary { margin-bottom: 8px; }
+.acc-reason { font-size: 13.5px; font-style: italic; overflow-wrap: anywhere; }
+.modal textarea { width: 100%; }
