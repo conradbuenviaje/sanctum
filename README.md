@@ -104,7 +104,11 @@ To set it up:
 1. Make a bot with @BotFather, add it to the team's group, and get the group's chat id
    (for example from `https://api.telegram.org/bot<token>/getUpdates` after posting in the group).
 2. In the GitHub repository's *Settings > Secrets and variables > Actions*, add
-   `LARK_APP_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and (optional) `SANCTUM_URL`.
+   `LARK_APP_ID` and `LARK_APP_SECRET` (the Lark app the digest reads as: Sanctum's own, not
+   necessarily the page's login app in `js/config.js`), `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+   and (optional) `SANCTUM_URL`. That Lark app needs the `bitable:app` permission in a
+   published version, and must be added to the Universe Base (and the ANDON Base, for the
+   ANDON rules) with read access.
 3. *Actions > Accountability digest > Run workflow* with **dry run** ticked prints it in the
    log; unticked, it sends. The schedule is in [`.github/workflows/digest.yml`](.github/workflows/digest.yml).
 
