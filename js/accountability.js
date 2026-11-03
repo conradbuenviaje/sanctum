@@ -152,6 +152,36 @@ export function samePerson(p, user) {
   return theirs.length >= 2 && theirs.every(w => mine.has(w));
 }
 
+/* ======================= dismissed blanks ======================= */
+
+/* Blanks someone dismissed on the board, with a reason: Variables rows whose Variable
+   is `name`, their Value { key, reason, by, at, code, field } (key = the item's key).
+   Map key → { id (the Variables row), reason, by, at, code, field }. The newest wins
+   if a blank was dismissed twice. */
+export function dismissalsFrom(records, cols, name) {
+  const out = new Map();
+  if (!cols) return out;
+  for (const r of records || []) {
+    const f = r.fields || {};
+    if (clean(f[cols.name]).toLowerCase() !== name.toLowerCase()) continue;
+    let v;
+    try { v = JSON.parse(clean(f[cols.value])); } catch { continue; }
+    if (!v || !clean(v.key) || !clean(v.reason)) continue;
+    const d = { id: r.record_id, key: clean(v.key), reason: clean(v.reason), by: clean(v.by), at: num(v.at) || 0,
+                code: clean(v.code), field: clean(v.field) };
+    const cur = out.get(d.key);
+    if (!cur || d.at >= cur.at) out.set(d.key, d);
+  }
+  return out;
+}
+
+/* The Variables Value that dismisses `item`: the reason is required (a few words at least). */
+export function dismissalValue(item, reason, by, now = Date.now()) {
+  const why = clean(reason).replace(/\s+/g, " ");
+  if (why.length < 5) throw new Error("Say why in a few words: the reason is what keeps this accountable.");
+  return JSON.stringify({ key: item.key, reason: why.slice(0, 500), by: clean(by), at: now, code: item.code, field: item.label });
+}
+
 /* ======================= which projects, at which stage ======================= */
 
 /* The year a project belongs to, and whether it's in scope (on or after cfg.since):
@@ -230,9 +260,10 @@ export function resolve(role, rows, cfg) {
    Status of an invoiced row (only those rows are asked for invoice details).
    read = { table: [column names] } for tables read by name only (null = every column):
    a rule on a column that wasn't read is skipped too, since it would look blank.
-   Returns { items, projects, notes, skipped: { outOfScope, tagged, noCode } }. */
-export function accountabilityItems(data, cfg, { fields = {}, read = {}, tagField = "Tags", forCollection = "For Collection", invalid = [] } = {}) {
-  const notes = [], items = [];
+   dismissed = dismissalsFrom(...): those blanks go to `dismissed` instead of `items`.
+   Returns { items, projects, dismissed, notes, skipped: { outOfScope, tagged, noCode } }. */
+export function accountabilityItems(data, cfg, { fields = {}, read = {}, tagField = "Tags", forCollection = "For Collection", invalid = [], dismissed = new Map() } = {}) {
+  const notes = [], items = [], dismissedItems = [];
   const skipped = { outOfScope: 0, tagged: 0, noCode: 0 };
   const has = (table, name) => !fields[table] || fields[table].some(f => f.field_name === name);
   const andonOk = Array.isArray(data.andon), collOk = Array.isArray(data.collections);
@@ -288,12 +319,16 @@ export function accountabilityItems(data, cfg, { fields = {}, read = {}, tagFiel
         table: rule.table, field: rule.field, label: fieldLabel(rule), rowTable: hit.table, rowId: hit.rowId,
         responsible: resolve(rule.responsible, rows, cfg), accountable: resolve(rule.accountable, rows, cfg),
       };
+      // Dismissed with a reason: off the lists and the digest, kept apart with who and why.
+      const d = dismissed.get(item.key);
+      if (d) { dismissedItems.push({ ...item, dismissal: d }); continue; }
       items.push(item);
       project.items.push(item);
     }
     if (project.items.length) projects.push(project);
   }
-  return { items, projects, notes: [...new Set(notes)], skipped };
+  dismissedItems.sort((a, b) => b.dismissal.at - a.dismissal.at);
+  return { items, projects, dismissed: dismissedItems, notes: [...new Set(notes)], skipped };
 }
 
 /* Is the rule's field blank for this project? → { table, rowId } of the row to open
@@ -392,7 +427,7 @@ export function nextState(items, previous, now) {
    names: only codes, project names, fields and stages.
    opts = { now, state: nextState(...), previous (the last run's state, or null),
             perPerson, pageUrl, notes, sinceLabel } */
-export function digestMessages(items, cfg, { now = Date.now(), state, previous, perPerson = 8, pageUrl = "", notes = [], dateLabel = "" } = {}) {
+export function digestMessages(items, cfg, { now = Date.now(), state, previous, perPerson = 8, pageUrl = "", notes = [], dateLabel = "", dismissedCount = 0 } = {}) {
   const seen = (state && state.firstSeen) || {};
   const before = (previous && previous.firstSeen) || null;
   const isNew = (it) => !!before && !before[it.key];
@@ -411,6 +446,7 @@ export function digestMessages(items, cfg, { now = Date.now(), state, previous, 
     const oldest = Math.max(...items.map(age));
     if (oldest > 0) head.push(`Oldest open: ${oldest} day${oldest === 1 ? "" : "s"}`);
   }
+  if (dismissedCount) head.push(`${dismissedCount} dismissed with a reason (see Sanctum)`);
   const blocks = [head.join("\n")];
   for (const p of byPerson(items, cfg)) {
     if (!p.responsible.length && !p.accountable.length) continue;

@@ -6,6 +6,7 @@ import { ACCOUNTABILITY, RULES } from "../js/config.js";
 import {
   configFrom, configValues, configWrites, isAdmin, samePerson, inScope, stageOf, applies, resolve, accountabilityItems,
   byPerson, byProject, fieldCounts, itemMatches, nextState, digestMessages, pack, telegramHandle, UNASSIGNED, ROW,
+  dismissalsFrom, dismissalValue,
 } from "../js/accountability.js";
 
 const user = (id, name) => ({ id, name, en_name: name, email: `${id}@x.com` });
@@ -245,4 +246,32 @@ test("pack() splits long digests into messages", () => {
   assert.ok(msgs.length > 10);
   assert.ok(msgs.every(m => m.length <= 1000));
   assert.equal(msgs.join("\n\n").split("block ").length - 1, 50);
+});
+
+test("dismissing a blank needs a reason; it leaves the lists and the digest but is kept with who and why", () => {
+  const cfg = defaults();
+  const first = accountabilityItems(fixture(), cfg, {});
+  const it = first.items.find(x => x.code === "2025TEG-P0004" && x.label === "Reason for Loss");
+  assert.throws(() => dismissalValue(it, "  ok ", "Ana"), /reason/);
+  const value = dismissalValue(it, "Client cancelled;   reason is in the Mancom notes", "Brian Buenviaje", 1000);
+  const name = ACCOUNTABILITY.dismissVariable;
+  const map = dismissalsFrom([
+    rec("d1", { Variable: name, Value: value }),
+    rec("d0", { Variable: name, Value: JSON.stringify({ key: it.key, reason: "older one", by: "X", at: 1 }) }),
+    rec("d2", { Variable: name, Value: JSON.stringify({ key: "x|y|z", reason: "" }) }),     // no reason: ignored
+    rec("d3", { Variable: name, Value: "{broken" }),
+  ], cols, name);
+  assert.equal(map.size, 1);
+  assert.equal(map.get(it.key).id, "d1");
+  assert.equal(map.get(it.key).reason, "Client cancelled; reason is in the Mancom notes");
+  const res = accountabilityItems(fixture(), cfg, { dismissed: map });
+  assert.equal(res.items.length, first.items.length - 1);
+  assert.ok(!res.items.some(x => x.key === it.key));
+  assert.equal(res.dismissed.length, 1);
+  assert.equal(res.dismissed[0].dismissal.by, "Brian Buenviaje");
+  // Dismissals aren't settings: the Admin page's Save never touches them.
+  const saved = configFrom(ACCOUNTABILITY, [rec("d1", { Variable: name, Value: value })], cols);
+  assert.deepEqual(configWrites(saved.rows, configValues(saved)).remove, []);
+  const text = digestMessages(res.items, cfg, { state: nextState(res.items, null, 1), dismissedCount: 1 }).join("\n");
+  assert.match(text, /1 dismissed with a reason/);
 });

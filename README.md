@@ -89,6 +89,13 @@ responsible for, and how many more they're accountable for) or by project, with 
 field to show only that one, and **Mine**. Click a blank to open its row in the row editor
 and fill it there (ANDON or Collections rows that don't exist yet open the Universe row).
 
+**Dismissing a blank.** The **×** beside a blank on the board dismisses it, with a reason
+(required, at least a few words). The dismissal is a Variables row named
+`accountability_dismissal` (its Value: the blank's key, the reason, who, when), so everyone
+sees it and the digest leaves the blank out (and counts how many are dismissed). Dismissed
+blanks are listed at the bottom of the board with their reason; **Restore** deletes the row.
+The Admin page's Save never touches these rows.
+
 **The Admin page** (`#/admin`) edits a draft of the rules, roles, Telegram handles, start
 date, skipped tags, fallback order and admins; **Save changes** writes it to the Variables
 table (one row per rule, role, person or setting, named `accountability_*`, its JSON in
