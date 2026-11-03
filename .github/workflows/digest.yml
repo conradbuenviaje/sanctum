@@ -1,6 +1,6 @@
 # The daily accountability digest (tools/notify.mjs), weekdays at 9:00 Manila (01:00 UTC).
-# Repository secrets: LARK_APP_ID and LARK_APP_SECRET (Sanctum's own Lark app), TELEGRAM_BOT_TOKEN,
-# TELEGRAM_CHAT_ID; optional SANCTUM_URL.
+# Repository secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID; optional SANCTUM_URL. Optional LARK_APP_ID and
+# LARK_APP_SECRET: without them the Lark token comes from the hosted connection service's GET /token.
 # Run it by hand from the Actions tab (Run workflow), with "dry run" to see it without sending.
 name: Accountability digest
 on:

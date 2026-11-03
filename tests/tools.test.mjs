@@ -174,3 +174,16 @@ test("storage move: safe to run again, the new key wins, nothing is guessed", ()
   assert.equal(migrate({}, { "polaris.token": "{broken" }).session["polaris.token"], "{broken");
   assert.deepEqual(migrate({}, {}), { local: {}, session: {} });
 });
+test("the digest's service token: GET /token, a retry if it fails, a plain sentence if it can't", async () => {
+  const { serviceToken } = await import("../tools/service-token.mjs");
+  const calls = [];
+  const reply = (obj) => ({ status: 200, json: async () => obj });
+  const ok = await serviceToken("https://svc.example/", { fetch: async (u) => { calls.push(u); return reply({ code: 0, tenant_access_token: "t-abc", expire: 7000 }); } });
+  assert.equal(ok, "t-abc");
+  assert.deepEqual(calls, ["https://svc.example/token"]);
+  let n = 0;
+  const second = await serviceToken("https://svc.example", { fetch: async () => (++n === 1 ? Promise.reject(new Error("socket hang up")) : reply({ code: 0, app_access_token: "t-app" })) });
+  assert.equal(second, "t-app");
+  await assert.rejects(serviceToken("https://svc.example", { fetch: async () => reply({ code: 10014, msg: "app secret invalid" }) }),
+    /connection service \(https:\/\/svc\.example\/token\): Lark said app secret invalid \(code 10014\)/);
+});

@@ -5,9 +5,10 @@
      npm run notify -- --dry-run     # print the digest, send nothing
      npm run notify                  # send it
 
-   It runs as the Lark app (like npm run check:live) and needs, in the environment or
-   in .env (git-ignored; see .env.example):
-     LARK_APP_SECRET       the Lark app's secret
+   It reads Lark as a Lark app. Set, in the environment or in .env (git-ignored; see .env.example):
+     LARK_APP_SECRET       optional: the Lark app's secret (and LARK_APP_ID if it isn't
+                           Polaris's app). Without it, the token comes from the hosted
+                           connection service's GET /token (Polaris's app; tools/service-token.mjs).
      TELEGRAM_BOT_TOKEN    from @BotFather (not needed with --dry-run)
      TELEGRAM_CHAT_ID      the group's chat id, e.g. -1001234567890 (not needed with --dry-run)
      SANCTUM_URL           optional: where Sanctum is hosted, for the link in the digest
@@ -18,11 +19,12 @@
    cache (.github/workflows/digest.yml). */
 
 import { readFileSync, writeFileSync } from "node:fs";
-import { RULES, ACCOUNTABILITY, TABLE_LINKS } from "../js/config.js";
+import { RULES, ACCOUNTABILITY, TABLE_LINKS, SERVICES, LARK } from "../js/config.js";
 import { loadEverything, loadFields, loadRecords, parseBaseLink } from "../js/ops.js";
 import { variableColumns } from "../js/sync.js";
 import { configFrom, accountabilityItems, nextState, digestMessages } from "../js/accountability.js";
 import { tenantToken, makeCall, tables as allTables, parseEnv } from "../tests/lark-node.mjs";
+import { serviceToken } from "./service-token.mjs";
 
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
@@ -39,7 +41,15 @@ if (!dryRun && (!bot || !chat)) {
 
 /* Read only what the digest needs. ANDON may be closed to the Lark app (only users
    can open its Base today): then its rules are skipped and the digest says so. */
-const call = makeCall(await tenantToken());
+let token;
+if (env("LARK_APP_SECRET")) {
+  token = await tenantToken({ appId: env("LARK_APP_ID") || LARK.appId, appSecret: env("LARK_APP_SECRET") });
+} else {
+  const service = env("LARK_SERVICE_URL") || SERVICES.lark.url;
+  console.log(`No LARK_APP_SECRET: getting the token from the connection service (${service}), which can take a minute to wake…`);
+  token = await serviceToken(service);
+}
+const call = makeCall(token);
 const T = allTables();
 const want = Object.fromEntries(["universe", "collections", "variables"].filter(k => T[k]).map(k => [k, T[k]]));
 const { data, fields, columns, problems } = await loadEverything(call, want, RULES);

@@ -194,6 +194,7 @@ export const ACCOUNTABILITY = {
   // When a role has nobody in it, the item goes to the first of these that has someone.
   fallback: ["AM", "BD", "Ops Lead"],
   rules: [
+    { id: "code",      table: "universe",    field: "Project Code",           from: STAGE.brief,   lost: true,  responsible: "Universe Keeper", accountable: "AM" },
     { id: "bd",        table: "universe",    field: "BD",                     from: STAGE.brief,   lost: true,  responsible: "Universe Keeper", accountable: "AM" },
     { id: "am",        table: "universe",    field: "AM",                     from: STAGE.brief,   lost: true,  responsible: "Universe Keeper", accountable: "BD" },
     { id: "client",    table: "universe",    field: "Client",                 from: STAGE.brief,   lost: false, responsible: "Universe Keeper", accountable: "BD" },
