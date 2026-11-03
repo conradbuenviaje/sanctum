@@ -9,6 +9,15 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 1.10.3 · Nov 3, 2026
+
+- **Changed:** when an invoice request is filed and its project's For Invoicing row
+  becomes Pending, the row also takes the request's **amount and currency** (a For
+  Invoicing row starts as the Universe's amount in PHP). The card's note says what
+  changes, e.g. *"Tranche 1" is PHP 200,000; it becomes the request's USD 4,000.*
+- **Changed:** links in the row beside the form (a request number, *1 attachment(s)*)
+  open in Lark Approval.
+
 ## 1.10.2 · Oct 30, 2026
 
 - **Fixed:** a long status badge on a card no longer pushes the date onto its own

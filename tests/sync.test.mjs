@@ -252,7 +252,7 @@ test("won project → a new For Invoicing row with Amount (VAT-Inc.)", () => {
                "Pending Invoice Request Approval");
 });
 
-test("request filed → its row becomes Pending: the request number and status only", () => {
+test("request filed → its row becomes Pending, with the request's amount and currency", () => {
   const { cards } = life();
   const by = Object.fromEntries(cards.map(c => [c.id, c]));
   // Two tranches, two requests: each takes the row closest to its amount.
@@ -261,10 +261,15 @@ test("request filed → its row becomes Pending: the request number and status o
   const ch = collectionsChange(by.iB1, {}, OPTS, RULES);
   assert.deepEqual(ch, {
     mode: "update", rowId: "cB1", action: "attach",
-    fields: { "Invoice Request": 202610010001, "Status": "Pending Invoice Request Approval" },
-    before: { "Invoice Request": null, "Status": "For Invoicing" },
+    fields: { "Invoice Request": 202610010001, "Status": "Pending Invoice Request Approval", "Invoice Amount": 210000 },
+    before: { "Invoice Request": null, "Status": "For Invoicing", "Invoice Amount": 200000 },
     expect: { status: "For Invoicing", ir: "" },
   });
+  assert.match(by.iB1.notes.join(" "), /“Bravo \(Tranche 1\)” is PHP 200,000; it becomes the request's PHP 210,000\./);
+  // A request in USD on a row the Universe put in PHP: both change.
+  const usd = { ...by.iB1, amount: 4000, currency: "USD" };
+  assert.deepEqual(collectionsChange(usd, {}, OPTS, RULES).fields,
+    { "Invoice Request": 202610010001, "Status": "Pending Invoice Request Approval", "Invoice Amount": 4000, "Currency": "USD" });
   // Or as a new row, if that's what the user picks.
   const fresh = collectionsChange(by.iB1, { targetId: "new" }, OPTS, RULES);
   assert.equal(fresh.mode, "create");

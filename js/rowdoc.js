@@ -27,6 +27,7 @@ export function createRowDoc(ctx) {
   }
   const fileList = (table, files) => h("ul", { class: "files" }, files.map(f => h("li", null, fileButton(table, f))));
   const inLark = (v) => Array.isArray(v) && v.length > 0 && v.every(f => f && f.file_token);
+  const linkOf = (d, v) => (d && d.type === 15 && v && typeof v.link === "string" && /^https:\/\//.test(v.link) ? v.link : "");
 
   /* p: { table, rowId, fields (what the push writes), names, code, name }, or for a
      row read fresh from Lark, shown as it is (a source table's record): { table,
@@ -58,9 +59,12 @@ export function createRowDoc(ctx) {
       const wide = d.type === 17 || LONG.test(k) || after.length > 48 || after.includes("\n");
       // Files already in Lark download from here; ones a push is adding show by name.
       const files = d.type === 17 && !changed && inLark(now[k]);
+      // A link (a request number, "1 attachment(s)") opens where it points, in Lark Approval.
+      const href = linkOf(d, k in writes ? writes[k] : now[k]);
       return h("div", { class: `doc-field${wide ? " is-wide" : ""}${changed ? " is-change" : ""}${files ? " is-files" : ""}` },
         h("dt", null, k),
-        h("dd", null, files ? fileList(p.table, now[k]) : [changed && before ? h("del", null, before) : null, after]));
+        h("dd", null, files ? fileList(p.table, now[k]) : [changed && before ? h("del", null, before) : null,
+          href && after ? h("a", { href, target: "_blank", rel: "noopener" }, after) : after]));
     });
 
     const title = value(TITLE_FIELD[p.table]) || p.name || "";

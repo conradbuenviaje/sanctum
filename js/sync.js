@@ -1272,8 +1272,8 @@ export function collectionCards(invoices, uni, coll, pendingCodes, rules) {
       c.notes.push(`“${p.row.arName}” (${moneyOf(p.row)}, ${p.row.status}) is most likely this invoice: it has ` +
                    "the same amount and was recorded without a request number.");
     } else if (p) {
-      if (p.row.currency && c.currency && p.row.currency !== c.currency) {
-        c.notes.push(`“${p.row.arName}” is in ${p.row.currency}; the request is in ${c.currency}.`);
+      if (c.amount !== null && (!near(p.row.amount, c.amount, 0.005) || (c.currency && p.row.currency !== c.currency))) {
+        c.notes.push(`“${p.row.arName}” is ${moneyOf(p.row)}; it becomes the request's ${moneyOf(c)}.`);
       }
     } else {
       const left = x.legacy.filter(e => !taken.has(e.id));
@@ -1357,7 +1357,9 @@ export function collectionsChange(card, choices, options, rules) {
   } else {
     if (row.ir !== card.requestNo) out["Invoice Request"] = Number(card.requestNo);
     if (row.status !== to) out["Status"] = to;
-    if (card.step === "approved") {   // the invoice as issued: its amount may differ from the plan
+    // The row takes the request's amount and currency: For Invoicing rows start as the
+    // Universe's PHP amount, and the invoice as filed or issued may differ from that.
+    if (card.step === "filed" || card.step === "approved") {
       if (card.amount !== null && !near(row.amount, card.amount, 0.005)) out["Invoice Amount"] = card.amount;
       if (currency && currency !== row.currency) out["Currency"] = currency;
     }

@@ -303,7 +303,7 @@ no cards.
 | Change | Collections columns written |
 | ------ | --------------------------- |
 | Won → new row | AR Name (the project, editable), Project Code, Invoice Amount = the Universe's **Amount (VAT-Inc.)** in PHP, Currency `PHP`, Status `For Invoicing`, Business Unit (the Universe's, matched to a Collections option) |
-| Filed → its row | Invoice Request (the number) and Status `Pending Invoice Request Approval`; nothing else |
+| Filed → its row | Invoice Request (the number), Status `Pending Invoice Request Approval`, and Invoice Amount and Currency when the request's differ (a For Invoicing row starts as the Universe's PHP amount; the card's note says what changes) |
 | Filed → new row | AR Name, Project Code, Invoice Amount and Currency (as filed), Invoice Request, Status `Pending…`, Business Unit |
 | Approved → its row | Status `For Collection`; Invoice Amount and Currency when the request's differ; the request number if the row didn't have it; any invoice details you add |
 | Approved → a row recorded by hand | Invoice Request only (plus any invoice details you add) |
