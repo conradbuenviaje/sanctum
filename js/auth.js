@@ -148,7 +148,13 @@ export async function redirectProblem() {
   const probe = `${LARK.api}/authen/v1/authorize?client_id=${encodeURIComponent(APP_ID)}` +
                 `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`;
   try {
-    const html = await (await fetch(viaProxy(probe), { cache: "no-store" })).text();
+    const res = await fetch(viaProxy(probe), { cache: "no-store" });
+    const html = await res.text();
+    // The connection service only serves the sites it lists: then nothing would work, login included.
+    if (res.status === 403 && /origin not allowed/.test(html)) {
+      return `The connection service doesn't accept this site (${location.origin}) yet, so logging in won't work here. ` +
+             "Ask its admin to add this address to the service's allowed origins.";
+    }
     const code = (html.match(/"code":\s*(\d+)/) || [])[1];
     if (code === "20029") {
       return `This address (${REDIRECT_URI}) isn't registered on the Lark app, so login would stop on a Lark ` +
