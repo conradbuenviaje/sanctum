@@ -1,8 +1,8 @@
 {
-  "name": "Polaris",
-  "short_name": "Polaris",
-  "description": "Push new Project Briefs, PARs and invoices into the Universe.",
-  "start_url": "./#/briefs",
+  "name": "Sanctum",
+  "short_name": "Sanctum",
+  "description": "Every project field left blank, and who is responsible and accountable for it.",
+  "start_url": "./#/accountability",
   "scope": "./",
   "display": "standalone",
   "background_color": "#F5F6FA",

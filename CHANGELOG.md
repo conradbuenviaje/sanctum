@@ -9,6 +9,26 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.0.0 · Nov 3, 2026
+
+**Polaris is now Sanctum**, the operations team's tool for making sure every project has
+someone responsible and accountable for it. Everything Polaris did is still there under
+**Data Audit**.
+
+- **Accountability board** (the new home page): every project from Jan 2025 on is checked
+  for the fields it must have at its stage: BD, AM and PM from the start, the amount and
+  dates once it's pitching, PAR, Sign Date and the Collections row once it's won, the signed
+  CE once it's signed, invoice details once it's for collection, and the reason once it's
+  lost. Each blank shows who is **Responsible** for filling it and who is **Accountable**
+  for it being filled, by person or by project. **Mine** shows only yours. Click a blank to
+  open its row and fill it.
+- **Admin page**: change the rules (which field, from which stage, who's responsible and
+  accountable), who holds the Universe Keeper, Ops Lead and Finance roles, the Telegram
+  handles, the start date, and who may change all this. It's saved in the Variables table
+  in Lark, so everyone and the daily digest use the same rules.
+- **Daily Telegram digest**: every weekday at 9:00, each person's blanks are posted to the
+  team's Telegram group, new ones marked. Set up in `.github/workflows/digest.yml`.
+
 ## 1.8.0 · Oct 26, 2026
 
 - **The ANDON approval moved to the ANDON tab, and follows the Project Approval.**

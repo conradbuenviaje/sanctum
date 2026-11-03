@@ -1,8 +1,10 @@
-/* Polaris: the page shell. State, routes, the header, loading, settings, and what
-   happens after a push. The cards live in inbox.js, the table in universe.js; the
-   transfer rules in sync.js and every Lark read/write in ops.js. */
+/* Sanctum (forked from Polaris): the page shell. State, routes, the header, loading,
+   settings, and what happens after a push. The cards live in inbox.js, the table in
+   universe.js, the accountability board and its admin page in board.js and admin.js;
+   the transfer rules in sync.js, the accountability rules in accountability.js, and
+   every Lark read/write in ops.js. */
 
-import { APP, ENV_LABEL, TABLE_LINKS, RULES, SERVICES, LARK } from "./config.js";
+import { APP, ENV_LABEL, TABLE_LINKS, RULES, SERVICES, LARK, ACCOUNTABILITY } from "./config.js";
 import { parseBaseLink, loadEverything, selectOptions, TABLE_TITLES, computedTypes, addVariable, deleteVariable } from "./ops.js";
 import {
   indexUniverse, indexCollections, briefCards, parCards, collectionCards, stepStatus, peoplePool, pmPool, auditCards, briefsByCode,
@@ -19,6 +21,9 @@ import { createCollections } from "./collections.js";
 import { createAndon } from "./andon.js";
 import { createSources, SOURCE_KINDS } from "./sources.js";
 import { createQueue } from "./queue.js";
+import { configFrom, accountabilityItems } from "./accountability.js";
+import { createBoard } from "./board.js";
+import { createAdmin } from "./admin.js";
 
 const tables = Object.fromEntries(Object.entries(TABLE_LINKS).map(([k, link]) => [k, parseBaseLink(link)]));
 const KEY = { theme: "polaris.theme", tab: "polaris.tab", draft: "polaris.draft" };
@@ -180,6 +185,9 @@ const collections = createCollections(ctx);
 const andon = createAndon(ctx);
 const sources = createSources(ctx);
 const queue = ctx.queue = createQueue(ctx, inbox);   // Push hands its write to the queue
+ctx.openRow = (table, id) => inbox.openRecord(table, id);   // the board's fields open the row editor
+const board = createBoard(ctx);
+const admin = createAdmin(ctx);
 
 /* ======================= the pane switcher =======================
    The title of the table beside the list (▾) opens a menu of the tables, to look at
@@ -212,18 +220,18 @@ for (const btn of $$(".pane-switch")) {
 }
 
 /* ======================= routes ======================= */
-const ROUTES = { "": "brief", briefs: "brief", pars: "par", invoices: "invoice", andon: "andon", audit: "audit", universe: "brief", collections: "invoice", settings: "settings", queue: "queue" };
-const parseRoute = () => ROUTES[(location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ""] || "brief";
+const ROUTES = { "": "accountability", accountability: "accountability", admin: "admin", briefs: "brief", pars: "par", invoices: "invoice", andon: "andon", audit: "audit", universe: "brief", collections: "invoice", settings: "settings", queue: "queue" };
+const parseRoute = () => ROUTES[(location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ""] || "accountability";
 
 function onRoute() {
   const r = parseRoute();
   if (r === "settings") S.view = "settings";
   else if (!auth.currentToken()) {
     S.view = "login";
-    S.returnTo = location.hash || "#/briefs";
+    S.returnTo = location.hash || "#/accountability";
   } else {
-    if (r === "queue") {
-      S.view = "queue";
+    if (r === "queue" || r === "accountability" || r === "admin") {
+      S.view = r;
       render();
       if (!S.data && !S.loading && !S.loadError) loadData();
       window.scrollTo(0, 0);
@@ -244,7 +252,7 @@ function onRoute() {
 /* ======================= rendering ======================= */
 const TAB_TITLES = { brief: "Briefs", par: "PARs", invoice: "Invoices", andon: "ANDON", audit: "Audit" };
 function pageTitle() {
-  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue" }[S.view] || TAB_TITLES[S.tab];
+  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Accountability", admin: "Admin" }[S.view] || TAB_TITLES[S.tab];
   return `${name} · ${APP.name}`;
 }
 
@@ -282,6 +290,8 @@ function render() {
     sources.render(side);   // (only if the pane shows a source table)
   }
   if (S.view === "settings") renderSettings();
+  if (S.view === "accountability") board.render();
+  if (S.view === "admin") admin.render();
   queue.paint();      // the Queue tab, its peek and the queue page
 }
 
@@ -301,6 +311,8 @@ function renderHeader() {
   $("#sessionPill").hidden = !signedIn;
   $("#meLink").hidden = !signedIn;
   $("#workLink").hidden = !signedIn;
+  $("#boardLink").hidden = !signedIn;
+  $("#adminLink").hidden = !signedIn;
   for (const a of $$(".nav a")) {
     if (a.dataset.nav === S.view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -350,7 +362,7 @@ function sessionEnded(message) {
   for (const d of document.querySelectorAll("dialog[open]")) d.close();   // any open sheet: the push sheet or invoice details
   S.data = null; S.lists = null; S.user = null; S.loadError = null;
   S.loginNote = message || "Your login ended after about 2 hours. Log in again to keep going.";
-  S.returnTo = location.hash || "#/briefs";
+  S.returnTo = location.hash || "#/accountability";
   if (S.view !== "settings") S.view = "login";
   render();
 }
@@ -447,6 +459,11 @@ function recompute() {
     hidden: { hiddenHere: uniAudit.hidden.hidden + andonAudit.hidden.hidden },
   };
   S.pool = peoplePool(d.universe, d.brief);
+  // Accountability: every blank the rules ask for, and who's on it (the board, the Admin page).
+  const acc = configFrom(ACCOUNTABILITY, d.variables, S.tagCols);
+  S.acc = { cfg: acc, ...accountabilityItems({ universe: d.universe, andon: d.andon, collections: d.collections }, acc, {
+    fields: S.fields, read: S.columns || {}, tagField: RULES.tags.field,
+    forCollection: RULES.collectionStages.forCollection, invalid: RULES.invalidStatuses }) };
   S.clients = [...new Set(uni.rows.map(r => r.client).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   S.statusOrder = selectOptions(field("universe", "Status"));
   S.colStatusOrder = selectOptions(field("collections", "Status"));
@@ -805,7 +822,8 @@ onConn(() => {
 });
 window.addEventListener("hashchange", onRoute);
 // A write or upload is running: closing the tab now could lose it.
-window.addEventListener("beforeunload", (e) => { if (inflight) { e.preventDefault(); e.returnValue = ""; } });
+// So could leaving the Admin page with changes that weren't saved.
+window.addEventListener("beforeunload", (e) => { if (inflight || admin.dirty()) { e.preventDefault(); e.returnValue = ""; } });
 matchMedia("(min-width: 1280px)").addEventListener("change", () => render());
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
@@ -822,14 +840,14 @@ setInterval(tickSession, 20000);
     // this runs starts over cleanly instead of replaying a spent code.
     history.replaceState(null, "", location.pathname + location.hash);
     const res = await auth.finishLogin(params);
-    history.replaceState(null, "", location.pathname + (res.returnTo && res.returnTo !== "#/" ? res.returnTo : "#/briefs"));
+    history.replaceState(null, "", location.pathname + (res.returnTo && res.returnTo !== "#/" ? res.returnTo : "#/accountability"));
     if (!res.ok) S.loginNote = res.message || describe(res.err);
   } else if (!location.hash) {
-    history.replaceState(null, "", location.pathname + location.search + "#/briefs");
+    history.replaceState(null, "", location.pathname + location.search + "#/accountability");
   }
   if (auth.currentToken()) {
     S.user = null;
-    auth.loadUser().then((u) => { S.user = u; renderHeader(); if (S.view === "settings") renderSettings(); })
+    auth.loadUser().then((u) => { S.user = u; renderHeader(); if (["settings", "accountability", "admin"].includes(S.view)) render(); })
       .catch(() => {});   // no name or picture is fine; a dead login already ended the session (net.js)
   } else if (auth.hadSession() && !S.loginNote) {
     S.loginNote = "Your login ended after about 2 hours. Log in again to keep going.";

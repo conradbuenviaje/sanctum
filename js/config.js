@@ -9,7 +9,7 @@
 
 /* version: bump it with every release and add an entry to CHANGELOG.md (newest first, same number).
    The top bar shows it beside the name, so people can see at a glance which version they're running. */
-export const APP = { name: "Polaris", key: "polaris", version: "1.8.0", env: "live" };   // env: "live" | "test"
+export const APP = { name: "Sanctum", key: "polaris", version: "2.0.0", env: "live" };   // env: "live" | "test"
 export const ENV_LABEL = APP.env === "test" ? "Test copy" : "";         // shown in the header, never a gate
 
 /* The connection service: the shared Lark proxy (Render). `service` is the name its
@@ -153,4 +153,78 @@ export const RULES = {
 export const UNIVERSE_VIEW = {
   foldedStatuses: ["Stalled", "Lost", "Archived"],
   defaultSort: "desc",          // newest RFP first, so a just-pushed brief is at the top of its group
+};
+
+/* Accountability (Sanctum): every project from `since` on must have each field a rule
+   names filled, from the stage the rule starts at. Each blank has a person Responsible
+   for filling it and a person Accountable for it being filled.
+
+   These are only the defaults. The Admin page (#/admin) edits them, and keeps what it
+   saves in the Variables table, one row per rule, role, person or setting (the row's
+   Variable column says which, its Value holds the JSON). What's saved there wins; a
+   kind with no rows saved yet uses the defaults below.
+
+   Rule: { id, table, field, from, lost, responsible, accountable, on }
+     table  "universe" | "andon" | "collections"
+     field  a column of that table, or "@row": the project has a row in that table at all
+     from   the first Universe Status (in `pipeline`) the rule applies at, and every later
+            one; "" = never for active projects
+     lost   true = also applies to Lost, Stalled and Archived projects
+     responsible / accountable  a project role (BD, AM, PM) or a named role (Universe Keeper…) */
+const STAGE = { brief: "For CE/Pitch Creation", pitch: "For Pitching", won: "Won - Awaiting CE Signature",
+                signed: "Signed CE", collect: "For Collection" };
+export const ACCOUNTABILITY = {
+  // Variables rows the Admin page reads and writes (the Variable column's value for each kind).
+  variables: { rule: "accountability_rule", role: "accountability_role", person: "accountability_person",
+               setting: "accountability_setting", admin: "accountability_admin" },
+  // Projects whose RFP Received Date (else Year, else the year in the code) is before this aren't checked.
+  since: "2025-01-01",
+  // Universe rows marked with one of these custom tags aren't checked.
+  skipTags: ["Hidden"],
+  // The Universe Status of an active project, in order: a rule applies from its stage onward.
+  pipeline: [STAGE.brief, STAGE.pitch, STAGE.won, STAGE.signed, STAGE.collect, "For Closing", "Fully Closed"],
+  lostStatuses: ["Lost", "Stalled", "Archived"],
+  // A Mancom Phase that puts a project at least at this stage, whatever its Status says.
+  phaseStages: { "7. Won": STAGE.won },
+  // Who a project role is, from the project's own rows.
+  projectRoles: { BD: { table: "universe", field: "BD" }, AM: { table: "universe", field: "AM" },
+                  PM: { table: "andon", field: "PM (LEAD)" } },
+  // Roles held by named people for every project (set on the Admin page).
+  namedRoles: ["Universe Keeper", "Ops Lead", "Finance"],
+  // When a role has nobody in it, the item goes to the first of these that has someone.
+  fallback: ["AM", "BD", "Ops Lead"],
+  rules: [
+    { id: "bd",        table: "universe",    field: "BD",                     from: STAGE.brief,   lost: true,  responsible: "Universe Keeper", accountable: "AM" },
+    { id: "am",        table: "universe",    field: "AM",                     from: STAGE.brief,   lost: true,  responsible: "Universe Keeper", accountable: "BD" },
+    { id: "client",    table: "universe",    field: "Client",                 from: STAGE.brief,   lost: false, responsible: "Universe Keeper", accountable: "BD" },
+    { id: "rfp",       table: "universe",    field: "RFP Received Date",      from: STAGE.brief,   lost: false, responsible: "Universe Keeper", accountable: "BD" },
+    { id: "andon",     table: "andon",       field: "@row",                   from: STAGE.brief,   lost: false, responsible: "AM",              accountable: "Ops Lead" },
+    { id: "pm",        table: "andon",       field: "PM (LEAD)",              from: STAGE.brief,   lost: false, responsible: "AM",              accountable: "Ops Lead" },
+    { id: "tribe",     table: "andon",       field: "TRIBE",                  from: STAGE.brief,   lost: false, responsible: "PM",              accountable: "AM" },
+    { id: "amount",    table: "universe",    field: "Amount (VAT-Ex.) (PHP)", from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "BD" },
+    { id: "vat",       table: "universe",    field: "VAT%",                   from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "BD" },
+    { id: "start",     table: "universe",    field: "Project Start",          from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "AM" },
+    { id: "end",       table: "universe",    field: "Project End",            from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "AM" },
+    { id: "desc",      table: "universe",    field: "Project Description",    from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "AM" },
+    { id: "bu",        table: "andon",       field: "Business Unit",          from: STAGE.pitch,   lost: false, responsible: "PM",              accountable: "AM" },
+    { id: "tools",     table: "andon",       field: "Tools",                  from: STAGE.pitch,   lost: false, responsible: "PM",              accountable: "AM" },
+    { id: "evstart",   table: "andon",       field: "Event Start",            from: STAGE.pitch,   lost: false, responsible: "PM",              accountable: "AM" },
+    { id: "evend",     table: "andon",       field: "Event End",              from: STAGE.pitch,   lost: false, responsible: "PM",              accountable: "AM" },
+    { id: "par",       table: "universe",    field: "PAR",                    from: STAGE.won,     lost: false, responsible: "AM",              accountable: "AM" },
+    { id: "sign",      table: "universe",    field: "Sign Date",              from: STAGE.won,     lost: false, responsible: "Universe Keeper", accountable: "AM" },
+    { id: "month",     table: "universe",    field: "Month",                  from: STAGE.won,     lost: false, responsible: "Universe Keeper", accountable: "AM" },
+    { id: "approval",  table: "andon",       field: "Approval",               from: STAGE.won,     lost: false, responsible: "PM",              accountable: "AM" },
+    { id: "coll",      table: "collections", field: "@row",                   from: STAGE.won,     lost: false, responsible: "Universe Keeper", accountable: "AM" },
+    { id: "ce",        table: "universe",    field: "Signed CE (PDF)",        from: STAGE.signed,  lost: false, responsible: "AM",              accountable: "BD" },
+    { id: "invno",     table: "collections", field: "Invoice Number",         from: STAGE.collect, lost: false, responsible: "Finance",         accountable: "AM" },
+    { id: "sino",      table: "collections", field: "SI Number",              from: STAGE.collect, lost: false, responsible: "Finance",         accountable: "AM" },
+    { id: "invdate",   table: "collections", field: "Invoice Date",           from: STAGE.collect, lost: false, responsible: "Finance",         accountable: "AM" },
+    { id: "lossmonth", table: "universe",    field: "Loss Month",             from: "",            lost: true,  responsible: "AM",              accountable: "BD" },
+    { id: "lossreason",table: "universe",    field: "Reason for Loss",        from: "",            lost: true,  responsible: "AM",              accountable: "BD" },
+  ].map(r => ({ ...r, on: true })),
+  // The daily Telegram digest (tools/notify.mjs).
+  digest: {
+    perPerson: 8,         // projects listed under each person; the rest are counted
+    pageUrl: "",          // where Sanctum is hosted (https://…/), for links in the digest; "" = no links
+  },
 };

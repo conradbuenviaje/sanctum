@@ -5,8 +5,9 @@
   "description": "Polaris: a static page that pushes Project Briefs, PARs and Invoice Requests into the Universe and Collections Lark tables.",
   "scripts": {
     "serve": "python tools/serve.py 9123",
-    "test": "node --test tests/sync.test.mjs tests/net.test.mjs tests/ops.test.mjs tests/tools.test.mjs",
+    "test": "node --test tests/accountability.test.mjs tests/sync.test.mjs tests/net.test.mjs tests/ops.test.mjs tests/tools.test.mjs",
     "check:live": "node tests/check-live.mjs",
+    "notify": "node tools/notify.mjs",
     "check:proxy": "node tools/check-proxy.mjs",
     "check:shell": "node tools/check-shell.mjs",
     "check:e2e": "node tests/e2e.mjs",

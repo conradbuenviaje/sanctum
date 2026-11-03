@@ -30,6 +30,8 @@ const SECRETS = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, "a private key"],
   [/\bsk-[A-Za-z0-9]{20,}/, "an API key (sk-…)"],
   [/\b[ut]-[A-Za-z0-9_\-]{36,}/, "a Lark access token (u-… or t-…)"],
+  [/\b\d{8,10}:[A-Za-z0-9_\-]{35}\b/, "a Telegram bot token"],
+  [/\bTELEGRAM_BOT_TOKEN[ \t]*=[ \t]*[^\s#"']{8,}/, "TELEGRAM_BOT_TOKEN with a value"],
 ];
 export function findSecrets(text) {
   return SECRETS.filter(([re]) => re.test(text)).map(([, what]) => what);
