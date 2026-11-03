@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { ACCOUNTABILITY, RULES } from "../js/config.js";
 import {
-  configFrom, configValues, configWrites, isAdmin, inScope, stageOf, applies, resolve, accountabilityItems,
+  configFrom, configValues, configWrites, isAdmin, samePerson, inScope, stageOf, applies, resolve, accountabilityItems,
   byPerson, byProject, fieldCounts, itemMatches, nextState, digestMessages, pack, telegramHandle, UNASSIGNED, ROW,
 } from "../js/accountability.js";
 
@@ -83,6 +83,12 @@ test("admins: everyone until one is saved, then only them", () => {
   assert.equal(isAdmin(cfg, { name: "Anyone", email: "any@x.com" }), false);
   assert.equal(isAdmin(cfg, { name: "Someone", email: "ADA@x.com" }), true);
   assert.equal(isAdmin(cfg, null), false);
+  // Lark's login often sends no email: then every word of the admin's name must be in the user's.
+  cfg.admins = [{ id: "", name: "Brian Buenviaje", email: "brian.buenviaje@x.com" }];
+  assert.equal(isAdmin(cfg, { name: "Brian Michael Conrad Buenviaje", email: "" }), true);
+  assert.equal(isAdmin(cfg, { name: "Brian Santos", email: "" }), false);
+  assert.equal(isAdmin(cfg, { name: "Brian Michael Conrad Buenviaje", email: "other@x.com" }), false);   // both emails known: they decide
+  assert.equal(samePerson({ name: "Brian", email: "" }, { name: "Brian Cruz" }), false);              // one word isn't enough
 });
 
 test("scope: RFP date, else Year, else the code's year", () => {

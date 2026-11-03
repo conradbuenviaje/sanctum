@@ -3,7 +3,7 @@
    Accountable for) or by project. A field opens its row in the row editor
    (js/inbox.js), so it can be filled right there; the edit goes through the queue. */
 
-import { byPerson, byProject, fieldCounts, itemMatches, UNASSIGNED } from "./accountability.js";
+import { byPerson, byProject, fieldCounts, itemMatches, samePerson, UNASSIGNED } from "./accountability.js";
 import { $, h, ic, store, recall } from "./ui.js";
 import { describe } from "./net.js";
 
@@ -17,10 +17,7 @@ export function createBoard(ctx) {
   $("#boardRefresh").addEventListener("click", () => ctx.loadData({ quiet: true }));
 
   /* Is this person the one signed in? (Lark's user info has a name and an email, not the open_id.) */
-  const isMe = (p) => {
-    const u = S.user || {};
-    return (u.email && p.email && p.email.toLowerCase() === u.email.toLowerCase()) || (!!u.name && p.name === u.name);
-  };
+  const isMe = (p) => samePerson(p, S.user);
   const mineOnly = (it) => [...it.responsible.people, ...it.accountable.people].some(isMe);
 
   function render() {

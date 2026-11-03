@@ -11,6 +11,9 @@ import { $, h, ic, toast, busy, confirmSheet } from "./ui.js";
 import { describe, isDeadToken } from "./net.js";
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
+// "stephen.lin@mineskiglobal.com" → "Stephen Lin": a name for someone added by email who isn't in the tables.
+const nameFromEmail = (email) => email.split("@")[0].split(/[._-]+/).filter(Boolean)
+  .map(w => w[0].toUpperCase() + w.slice(1)).join(" ") || email;
 const sig = (cfg) => JSON.stringify(configValues(cfg).map(v => [v.key, v.value]));
 
 export function createAdmin(ctx) {
@@ -112,11 +115,14 @@ export function createAdmin(ctx) {
   function peoplePicker(list, can, placeholder) {
     const all = pool();
     const id = `pk${Math.random().toString(36).slice(2, 8)}`;
-    const input = h("input", { type: "text", list: id, placeholder, disabled: !can, autocomplete: "off",
+    const input = h("input", { type: "text", list: id, placeholder: `${placeholder} (name or email)`, disabled: !can, autocomplete: "off",
       onchange: (e) => {
         const name = e.target.value.trim().toLowerCase();
-        const p = all.find(x => x.name.toLowerCase() === name || (x.email && x.email.toLowerCase() === name));
-        if (p && !list.some(x => x.id === p.id)) { list.push({ id: p.id, name: p.name, email: p.email }); changed(); }
+        // Someone in the tables (a BD, AM or PM), or anyone else by their email.
+        const p = all.find(x => x.name.toLowerCase() === name || (x.email && x.email.toLowerCase() === name))
+          || (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(name) ? { id: "", name: nameFromEmail(name), email: name } : null);
+        const same = (x) => (p.id && x.id === p.id) || (p.email && x.email && x.email.toLowerCase() === p.email.toLowerCase());
+        if (p && !list.some(same)) { list.push({ id: p.id, name: p.name, email: p.email }); changed(); }
         else e.target.value = "";
       } });
     return h("div", { class: "picker" }, h("div", { class: "picker-box" },
