@@ -9,6 +9,17 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.4.0 · Nov 4, 2026
+
+- **Everyone who isn't an admin is a viewer.** They see only the Accountability board, marked
+  *View only*: a blank opens its row read-only, and there's no Dismiss or Restore. Data Audit,
+  the Queue and the Admin page are hidden from them (opening one goes to the board), and so is
+  changing the custom tags in Settings.
+- **The Admin and Data Audit tabs show only for admins.**
+- **A table you can't open no longer stops the page.** Only the Universe is needed: if your
+  login can't read another table (staff often can't open the approval tables, or ANDON), the
+  board still loads, only what uses that table is off, and Settings says which one.
+
 ## 2.3.1 · Nov 4, 2026
 
 - **The role stays "Ops Lead".** 2.3.0 renamed the starting role to Head of Operations, which

@@ -56,6 +56,7 @@ export function schemaSpec(rules) {
       // cards and the Universe view need (and what Polaris read); `index` is the lean set
       // re-read just before a push to rule out duplicates.
       read: "*",
+      requiredTable: true,   // the one table the page can't do without (the board is built from it)
       list: ["Project Code", "Project", "Client", "PAR", "Amount (VAT-Ex.) (PHP)", "BD", "AM",
              "RFP Received Date", "Status", "Year", "Amount (VAT-Inc.)", "Business Unit", rules.universeIgnoreField,
              // …and what the audit compares with the brief
@@ -272,9 +273,10 @@ export async function loadEverything(call, tables, rules, onProgress) {
       columns[k] = want || null;      // null: every column
       data[k] = await loadRecords(call, tables[k], want, (n, total) => onProgress && onProgress(k, n, total));
     } catch (e) {
-      // A table only some features use (spec.optionalTable: the Variables) can't stop
-      // the page: its features are off, and Settings says why. A dead login still ends it.
-      if (!spec[k].optionalTable || (e && e.deadToken)) throw e;
+      // Only the Universe is needed for the page to work. Any other table the person can't
+      // read (view-only staff often can't open the approval tables) only switches off what
+      // uses it, and Settings says why. A dead login still ends it.
+      if (spec[k].requiredTable || (e && e.deadToken)) throw e;
       fields[k] = []; data[k] = null;
       tableProblems[k] = [`${TABLE_TITLES[k]}: couldn't be read (${(e && e.message) || "error"}).`];
     }

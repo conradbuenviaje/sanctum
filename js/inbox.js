@@ -807,7 +807,7 @@ export function createInbox(ctx) {
     const f = rec.fields || {};
     const req = f["Request No."];
     openSheet({ kind: "view", id: `${table}:${rowId}`, table, rowId, code: clean(f["Project Code"]),
-                name: clean(f["Project Name"]), requestNo: plain(req), link: (req && req.link) || "", notes: [] });
+                name: clean(f["Project Name"]) || clean(f["Project"]), requestNo: plain(req), link: (req && req.link) || "", notes: [] });
   }
   function buildView(body, c) {
     const s = sheet;
@@ -1415,5 +1415,6 @@ export function createInbox(ctx) {
     }
   }
 
-  return { render, renderLoader, perform, preview, reopen, keyOf: draftKey, openRecord, editCard };
+  // viewRecord: any row, read-only (for people who may only look: js/board.js).
+  return { render, renderLoader, perform, preview, reopen, keyOf: draftKey, openRecord, viewRecord: openView, editCard };
 }

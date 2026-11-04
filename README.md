@@ -93,6 +93,13 @@ responsible for, and how many more they're accountable for), by role, or by proj
 field to show only that one, and **Mine**. Click a blank to open its row in the row editor
 and fill it there (ANDON or Collections rows that don't exist yet open the Universe row).
 
+**Who sees what.** Admins (the Admin page's list) see everything. Everyone else is a viewer:
+only the Accountability board, read-only (a blank opens its row to look at; no Dismiss, no
+Admin page, no Data Audit). Sanctum reads Lark as the person logged in, so a viewer needs at
+least *view* access to the Universe Base (and ANDON, Collections and Variables to see those
+blanks and the saved rules). A table they can't open is left out with a note; only the
+Universe is required.
+
 **Dismissing a blank.** The **×** beside a blank on the board dismisses it, with a reason
 (required, at least a few words). The dismissal is a Variables row named
 `accountability_dismissal` (its Value: the blank's key, the reason, who, when), so everyone
