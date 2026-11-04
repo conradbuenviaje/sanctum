@@ -442,3 +442,29 @@ main { padding-bottom: 120px; }
 .acc-dismissed[open] summary { margin-bottom: 8px; }
 .acc-reason { font-size: 13.5px; font-style: italic; overflow-wrap: anywhere; }
 .modal textarea { width: 100%; }
+
+/* ---- folding (board cards, Admin sections) ---------------------------------------- */
+.acc-head { align-items: center; }
+.acc-toggle { display: flex; align-items: flex-start; gap: 8px; min-width: 0; flex: 1; padding: 0; border: 0; background: none;
+              color: inherit; text-align: left; cursor: pointer; }
+.acc-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: var(--r-xs); }
+.acc-caret { width: 14px; height: 14px; margin-top: 3px; flex-shrink: 0; transition: transform var(--t-fast, .15s); }
+.acc-card.is-folded .acc-caret { transform: rotate(-90deg); }
+.acc-card.is-folded { gap: 0; }
+.acc-more-btn { justify-self: start; font-size: 13px; font-weight: 700; }
+.adm-tools { display: flex; justify-content: flex-end; }
+.adm-sec { gap: 12px; }
+.adm-sec-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; border: 0; background: none; color: inherit;
+                text-align: left; cursor: pointer; }
+.adm-sec-head:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: var(--r-xs); }
+.adm-sec-head h2 { margin: 0; }
+.adm-caret { width: 14px; height: 14px; margin-left: auto; transition: transform var(--t-fast, .15s); }
+.adm-sec.is-closed .adm-caret { transform: rotate(-90deg); }
+.adm-filters { display: grid; gap: 6px; }
+.adm-filter { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 8px 12px; }
+.adm-filter summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: pointer; font-size: 13.5px; }
+.adm-filter[open] summary { margin-bottom: 8px; }
+.adm-filter .search { margin-bottom: 8px; max-width: 320px; }
+.adm-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 260px; overflow: auto; }
+.adm-chips .count { margin-left: 2px; opacity: .75; }
+.adm .picker .suggest li { display: flex; flex-direction: column; }

@@ -62,6 +62,9 @@ export function configFrom(defaults, records, cols) {
     since: /^\d{4}-\d{2}-\d{2}$/.test(setting.since || "") ? setting.since : defaults.since,
     skipTags: Array.isArray(setting.skipTags) ? setting.skipTags.map(clean).filter(Boolean) : [...defaults.skipTags],
     fallback: Array.isArray(setting.fallback) ? setting.fallback.map(clean).filter(Boolean) : [...defaults.fallback],
+    // Values to leave out, by scope filter key ({ status: ["Archived"] }; see scopeFilters).
+    exclude: normExclude(setting.exclude, defaults.scopeFilters || []),
+    scopeFilters: defaults.scopeFilters || [],
     pipeline: defaults.pipeline, lostStatuses: defaults.lostStatuses, phaseStages: defaults.phaseStages,
     projectRoles: defaults.projectRoles, tribeRole: defaults.tribeRole, blankValues: defaults.blankValues || {},
     namedRoles: Object.keys(roles),
@@ -71,6 +74,15 @@ export function configFrom(defaults, records, cols) {
     rows: Object.fromEntries(Object.entries(rows).map(([k, list]) => [k, list.map(x => ({ id: x.id, key: rowKey(k, x.value), text: x.text }))])),
     problems,
   };
+}
+
+function normExclude(v, filters) {
+  const out = {};
+  for (const f of filters) {
+    const list = v && Array.isArray(v[f.key]) ? v[f.key].map(clean).filter(Boolean) : [];
+    if (list.length) out[f.key] = [...new Set(list)];
+  }
+  return out;
 }
 
 function normRule(r) {
@@ -105,7 +117,7 @@ function rowKey(kind, v) {
 export function configValues(cfg) {
   const out = [];
   const add = (kind, v) => out.push({ kind, key: rowKey(kind, v), value: JSON.stringify(v) });
-  add("setting", { since: cfg.since, skipTags: cfg.skipTags, fallback: cfg.fallback });
+  add("setting", { since: cfg.since, skipTags: cfg.skipTags, fallback: cfg.fallback, exclude: cfg.exclude || {} });
   for (const r of cfg.rules) add("rule", { id: r.id, table: r.table, field: r.field, from: r.from, lost: r.lost,
                                            responsible: r.responsible, accountable: r.accountable, on: r.on });
   for (const name of cfg.namedRoles) add("role", { role: name, people: (cfg.roles[name] || []).map(p => ({ id: p.id, name: p.name, email: p.email })) });
@@ -244,6 +256,47 @@ export function stageOf(f, cfg) {
   return { status, index: Math.max(index, 0), lost: false, known };
 }
 
+/* The scope filter a project is left out by (the Admin page's Scope: { status:
+   ["Archived"] }), or null. rows = { universe, andon } records for the project. */
+export function excludedBy(cfg, rows) {
+  for (const flt of cfg.scopeFilters || []) {
+    const out = (cfg.exclude || {})[flt.key];
+    if (!out || !out.length) continue;
+    const rec = rows[flt.table];
+    const v = rec ? clean((rec.fields || {})[flt.field]) : "";
+    if (v && out.some(x => x.toLowerCase() === v.toLowerCase())) return flt;
+  }
+  return null;
+}
+
+/* Every value a scope filter can leave out, from the tables (and any already left out):
+   [{ value, n }] (n = projects with it), most first. */
+export function filterValues(flt, data, cfg) {
+  const counts = new Map();
+  const add = (v) => { const t = clean(v); if (t) counts.set(t, (counts.get(t) || 0) + 1); };
+  for (const r of data[flt.table] || []) add((r.fields || {})[flt.field]);
+  for (const v of (cfg.exclude || {})[flt.key] || []) {
+    if (![...counts.keys()].some(k => k.toLowerCase() === v.toLowerCase())) counts.set(v, 0);
+  }
+  return [...counts.entries()].map(([value, n]) => ({ value, n })).sort((a, b) => b.n - a.n || a.value.localeCompare(b.value));
+}
+
+/* Rename a named role everywhere it's used: its people, the rules and the fallback order.
+   Returns the new cfg (a copy); throws a plain sentence if the new name is taken. */
+export function renameRole(cfg, from, to, projectRoles = []) {
+  const name = clean(to).replace(/\s+/g, " ");
+  if (!name) throw new Error("Type the new name.");
+  if (name.toLowerCase() !== from.toLowerCase()
+      && [...projectRoles, ...cfg.namedRoles].some(r => r.toLowerCase() === name.toLowerCase())) {
+    throw new Error(`There's already a role called “${name}”.`);
+  }
+  const swap = (r) => (r === from ? name : r);
+  const roles = {};
+  for (const [k, v] of Object.entries(cfg.roles)) roles[swap(k)] = v;
+  return { ...cfg, roles, namedRoles: cfg.namedRoles.map(swap), fallback: cfg.fallback.map(swap),
+           rules: cfg.rules.map(r => ({ ...r, responsible: swap(r.responsible), accountable: swap(r.accountable) })) };
+}
+
 /* Does a rule apply to a project at this stage? */
 export function applies(rule, stage, cfg) {
   if (!rule.on) return false;
@@ -309,7 +362,7 @@ export function resolve(role, rows, cfg) {
    Returns { items, projects, dismissed, notes, skipped: { outOfScope, tagged, noCode } }. */
 export function accountabilityItems(data, cfg, { fields = {}, read = {}, tagField = "Tags", forCollection = "For Collection", invalid = [], dismissed = new Map() } = {}) {
   const notes = [], items = [], dismissedItems = [];
-  const skipped = { outOfScope: 0, tagged: 0, noCode: 0 };
+  const skipped = { outOfScope: 0, tagged: 0, excluded: 0, noCode: 0 };
   const has = (table, name) => !fields[table] || fields[table].some(f => f.field_name === name);
   const andonOk = Array.isArray(data.andon), collOk = Array.isArray(data.collections);
   const rules = cfg.rules.filter(r => {
@@ -346,6 +399,7 @@ export function accountabilityItems(data, cfg, { fields = {}, read = {}, tagFiel
     const code = normCode(plain(f["Project Code"]));
     const stage = stageOf(f, cfg);
     const andonRows = code ? andonBy.get(code) || [] : [];
+    if (excludedBy(cfg, { universe: u, andon: andonRows[0] || null })) { skipped.excluded++; continue; }
     const collRows = (code ? collBy.get(code) || [] : []).filter(r => !invalid.includes(clean((r.fields || {})["Status"])));
     const rows = { universe: u, andon: andonRows[0] || null };
     const project = {
@@ -425,6 +479,20 @@ export function byPerson(items, cfg) {
   }
   return [...map.values()].sort((a, b) => (a.id === UNASSIGNED) - (b.id === UNASSIGNED)
     || b.responsible.length - a.responsible.length || b.accountable.length - a.accountable.length || a.name.localeCompare(b.name));
+}
+
+/* The items by role: [{ role, responsible: [item], accountable: [item] }], in `order`
+   (the roles as the Admin page lists them), then any others. An item is under its
+   Responsible role and its Accountable role (once if they're the same). */
+export function byRole(items, order = []) {
+  const map = new Map();
+  const get = (role) => map.get(role) || map.set(role, { role, responsible: [], accountable: [] }).get(role);
+  for (const it of items) {
+    get(it.responsible.role).responsible.push(it);
+    if (it.accountable.role !== it.responsible.role) get(it.accountable.role).accountable.push(it);
+  }
+  const rank = (r) => { const i = order.indexOf(r); return i < 0 ? order.length : i; };
+  return [...map.values()].sort((a, b) => rank(a.role) - rank(b.role) || a.role.localeCompare(b.role));
 }
 
 /* Items grouped by project, in first-seen order: [{ code, project, status, items }]. */

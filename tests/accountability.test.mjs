@@ -7,6 +7,7 @@ import {
   configFrom, configValues, configWrites, isAdmin, samePerson, inScope, stageOf, applies, resolve, accountabilityItems,
   byPerson, byProject, fieldCounts, itemMatches, nextState, digestMessages, pack, telegramHandle, UNASSIGNED, ROW,
   dismissalsFrom, dismissalValue, rulesBehindDefaults, isBlankFor,
+  excludedBy, filterValues, renameRole, byRole,
 } from "../js/accountability.js";
 
 const user = (id, name) => ({ id, name, en_name: name, email: `${id}@x.com` });
@@ -21,16 +22,16 @@ test("the defaults are used until the Admin page saves something", () => {
   const cfg = defaults();
   assert.equal(cfg.since, "2025-01-01");
   assert.equal(cfg.rules.length, ACCOUNTABILITY.rules.length);
-  assert.deepEqual(cfg.namedRoles, ["Universe Keeper", "Ops Lead", "Finance", "Account Director", "Project Director"]);
+  assert.deepEqual(cfg.namedRoles, ["Universe Keeper", "Head of Operations", "Finance", "Account Director", "Project Director"]);
   assert.deepEqual(cfg.saved, { rule: false, role: false, person: false, setting: false, admin: false, tribe: false });
   assert.ok(cfg.rules.every(r => r.on && r.responsible && r.accountable));
 });
 
 test("saved Variables rows win over the defaults, kind by kind", () => {
   const cfg = configFrom(ACCOUNTABILITY, [
-    variable("v1", "rule", { id: "pm", table: "andon", field: "PM (LEAD)", from: "For Pitching", lost: false, responsible: "AM", accountable: "Ops Lead" }),
-    variable("v2", "role", { role: "Ops Lead", people: [{ id: "ou_ops", name: "Olive Ops" }] }),
-    variable("v3", "setting", { since: "2026-01-01", skipTags: [], fallback: ["Ops Lead"] }),
+    variable("v1", "rule", { id: "pm", table: "andon", field: "PM (LEAD)", from: "For Pitching", lost: false, responsible: "AM", accountable: "Head of Operations" }),
+    variable("v2", "role", { role: "Head of Operations", people: [{ id: "ou_ops", name: "Olive Ops" }] }),
+    variable("v3", "setting", { since: "2026-01-01", skipTags: [], fallback: ["Head of Operations"] }),
     variable("v4", "person", { id: "ou_am", name: "Ana AM", telegram: "@ana_am" }),
     rec("v5", { Variable: "accountability_rule", Value: "{not json" }),
     rec("v6", { Variable: "custom_tag", Value: "No Revenue" }),
@@ -39,7 +40,7 @@ test("saved Variables rows win over the defaults, kind by kind", () => {
   assert.equal(cfg.rules[0].from, "For Pitching");
   assert.equal(cfg.since, "2026-01-01");
   assert.deepEqual(cfg.skipTags, []);
-  assert.deepEqual(cfg.roles["Ops Lead"].map(p => p.name), ["Olive Ops"]);
+  assert.deepEqual(cfg.roles["Head of Operations"].map(p => p.name), ["Olive Ops"]);
   assert.deepEqual(cfg.roles["Finance"], []);            // a default named role with nobody yet
   assert.equal(cfg.people.ou_am.telegram, "ana_am");
   assert.equal(cfg.problems.length, 1);
@@ -55,13 +56,13 @@ test("Telegram handles are cleaned up", () => {
 
 test("saving writes only what changed", () => {
   const records = [
-    variable("v1", "setting", { since: "2025-01-01", skipTags: ["Hidden"], fallback: ["AM", "BD", "Ops Lead"] }),
-    variable("v2", "role", { role: "Ops Lead", people: [] }),
-    variable("v3", "role", { role: "Ops Lead", people: [] }),   // a duplicate: removed
+    variable("v1", "setting", { since: "2025-01-01", skipTags: ["Hidden"], fallback: ["AM", "BD", "Head of Operations"], exclude: {} }),
+    variable("v2", "role", { role: "Head of Operations", people: [] }),
+    variable("v3", "role", { role: "Head of Operations", people: [] }),   // a duplicate: removed
     variable("v4", "admin", { id: "ou_x", name: "Old Admin", email: "" }),
   ];
   const cfg = configFrom(ACCOUNTABILITY, records, cols);
-  cfg.roles["Ops Lead"] = [{ id: "ou_ops", name: "Olive Ops", email: "" }];
+  cfg.roles["Head of Operations"] = [{ id: "ou_ops", name: "Olive Ops", email: "" }];
   cfg.admins = [];
   const w = configWrites(cfg.rows, configValues(cfg));
   assert.deepEqual(w.update.map(u => u.id), ["v2"]);
@@ -128,8 +129,8 @@ test("who: the role's holder, else the fallback, else unassigned", () => {
   assert.deepEqual(am.people.map(p => p.name), ["Ben BD"]);
   const keeper = resolve("Universe Keeper", { universe: rec("u2", {}), andon: null }, cfg);
   assert.equal(keeper.unassigned, true);
-  cfg.roles["Ops Lead"] = [{ id: "ou_ops", name: "Olive Ops", email: "" }];
-  assert.equal(resolve("Universe Keeper", { universe: rec("u2", {}), andon: null }, cfg).via, "Ops Lead");
+  cfg.roles["Head of Operations"] = [{ id: "ou_ops", name: "Olive Ops", email: "" }];
+  assert.equal(resolve("Universe Keeper", { universe: rec("u2", {}), andon: null }, cfg).via, "Head of Operations");
 });
 
 /* A small Universe, ANDON and Collections: one project at each interesting stage. */
@@ -170,7 +171,7 @@ test("items: each blank the rules ask for, with who's responsible and accountabl
   assert.deepEqual(of("2025TEG-P0002"), ["PM (LEAD)", "Project Description"]);
   assert.deepEqual(of("2026TEG-P0003"), ["Collections row", "Signed CE (PDF)"]);
   assert.deepEqual(of("2025TEG-P0004"), ["Reason for Loss"]);
-  assert.deepEqual(res.skipped, { outOfScope: 1, tagged: 1, noCode: 0 });
+  assert.deepEqual(res.skipped, { outOfScope: 1, tagged: 1, excluded: 0, noCode: 0 });
   const bd = res.items.find(it => it.code === "2025TEG-P0001" && it.field === "BD");
   assert.equal(bd.responsible.via, "AM");                  // no Universe Keeper yet
   assert.equal(bd.accountable.people[0].name, "Ana AM");
@@ -322,4 +323,55 @@ test("TRIBE \"NO TRIBE ASSIGNED\" counts as no tribe: it's asked for, and every 
   assert.ok(tribe, "a placeholder tribe is a blank");
   cfg.tribeLeads = { "TRIBE A - Moonton": [{ id: "ou_a", name: "Ada Lead", email: "" }], "TRIBE B - Tencent": [{ id: "ou_b", name: "Bea Lead", email: "" }] };
   assert.deepEqual(resolve("Tribe Lead", { universe: d.universe[1], andon: d.andon[0] }, cfg).people.map(p => p.name), ["Ada Lead", "Bea Lead"]);
+});
+
+test("scope filters leave out projects by Status, Tribe and the rest, and list the values to pick from", () => {
+  const cfg = defaults();
+  const d = fixture();
+  cfg.exclude = { status: ["lost"], tribe: ["Alpha"] };
+  const res = accountabilityItems(d, cfg, {});
+  // 2025TEG-P0004 is Lost; 2025TEG-P0002 and 2026TEG-P0003 are in the Alpha tribe.
+  assert.deepEqual([...new Set(res.items.map(it => it.code))], ["2025TEG-P0001"]);
+  assert.equal(res.skipped.excluded, 3);
+  assert.equal(excludedBy(cfg, { universe: d.universe[0], andon: null }), null);
+  assert.equal(excludedBy(cfg, { universe: d.universe[3], andon: null }).key, "status");
+  const statuses = filterValues(cfg.scopeFilters.find(f => f.key === "status"), d, cfg);
+  assert.deepEqual(statuses[0], { value: "For Pitching", n: 3 });
+  assert.ok(!statuses.some(s => s.value === "lost"));   // "lost" is Lost, already counted
+  // Saved and read back.
+  const back = configFrom(ACCOUNTABILITY, configValues(cfg).map((v, i) => rec(`n${i}`, { Variable: ACCOUNTABILITY.variables[v.kind], Value: v.value })), cols);
+  assert.deepEqual(back.exclude, { status: ["lost"], tribe: ["Alpha"] });
+});
+
+test("renaming a role changes its people, the rules and the fallback; a taken name is refused", () => {
+  const cfg = defaults();
+  cfg.namedRoles = cfg.namedRoles.map(r => (r === "Head of Operations" ? "Ops Lead" : r));
+  cfg.roles = { ...cfg.roles, "Ops Lead": [{ id: "ou_o", name: "Olive", email: "" }] };
+  delete cfg.roles["Head of Operations"];
+  cfg.fallback = ["AM", "BD", "Ops Lead"];
+  cfg.rules = cfg.rules.map(r => (r.id === "andon" ? { ...r, accountable: "Ops Lead" } : r));
+  const next = renameRole(cfg, "Ops Lead", "Head of Operations", ["BD", "AM", "PM", "Tribe Lead"]);
+  assert.ok(next.namedRoles.includes("Head of Operations") && !next.namedRoles.includes("Ops Lead"));
+  assert.deepEqual(next.roles["Head of Operations"].map(p => p.name), ["Olive"]);
+  assert.deepEqual(next.fallback, ["AM", "BD", "Head of Operations"]);
+  assert.equal(next.rules.find(r => r.id === "andon").accountable, "Head of Operations");
+  assert.throws(() => renameRole(cfg, "Ops Lead", "finance", []), /already a role/);
+  assert.throws(() => renameRole(cfg, "Ops Lead", "Tribe Lead", ["Tribe Lead"]), /already a role/);
+  assert.throws(() => renameRole(cfg, "Ops Lead", "  ", []), /new name/);
+});
+
+test("grouping by role: each item under its Responsible and Accountable role, in the Admin page's order", () => {
+  const cfg = defaults();
+  const res = accountabilityItems(fixture(), cfg, {});
+  const groups = byRole(res.items, ["BD", "AM", "PM", "Tribe Lead", ...cfg.namedRoles]);
+  const names = groups.map(g => g.role);
+  assert.ok(names.indexOf("AM") < names.indexOf("Universe Keeper"));
+  const am = groups.find(g => g.role === "AM");
+  assert.ok(am.responsible.length > 0);
+  // An item whose R and A are the same role is listed once, as Responsible.
+  const same = res.items.find(it => it.responsible.role === it.accountable.role);
+  const g = groups.find(x => x.role === same.responsible.role);
+  assert.ok(g.responsible.includes(same) && !g.accountable.includes(same));
+  const total = groups.reduce((n, x) => n + x.responsible.length, 0);
+  assert.equal(total, res.items.length);
 });

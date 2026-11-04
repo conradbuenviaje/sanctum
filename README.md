@@ -65,7 +65,8 @@ share it); the starting rules are `ACCOUNTABILITY` in [`js/config.js`](js/config
 
 **Which projects.** Every Universe row whose RFP Received Date (else Year, else the year
 in its project code) is on or after the start date (Jan 1, 2025), except rows tagged with
-a skipped custom tag (*Hidden*).
+a skipped custom tag (*Hidden*) and rows the Admin page's Scope leaves out by Status, Mancom
+Phase, Business Unit, Tribe (from ANDON) or Client (`scopeFilters` in `js/config.js`).
 
 **Which fields, from when.** Each rule names a column of the Universe, ANDON or
 Collections (or *has a row there at all*) and the first Status it's required at. It's then
@@ -81,15 +82,15 @@ Archived projects. Notes:
 **Who.** Every rule has a Responsible and an Accountable role. BD and AM come from the
 project's Universe row, PM from its ANDON row's PM (LEAD). The **Tribe Lead** is the lead of
 the project's ANDON TRIBE (set per tribe on the Admin page); while a project has no tribe yet
-it's every Tribe Lead, who decide at the Win meeting which tribe takes it. Universe Keeper, Ops
-Lead, Finance, Account Director and Project Director (and any role added on the Admin page)
+it's every Tribe Lead, who decide at the Win meeting which tribe takes it. Universe Keeper, Head of
+Operations, Finance, Account Director and Project Director (and any role added on the Admin page)
 are the same people for every project. A blank AM is the Account Director's to assign; a blank
 PM (LEAD) or TRIBE is the Tribe Lead's, accountable to the Project Director. When a
 role has nobody in it, the blank goes to the first of the fallback roles that has someone
-(AM, then BD, then Ops Lead); with nobody there either, it's listed under *Nobody (unassigned)*.
+(AM, then BD, then Head of Operations); with nobody there either, it's listed under *Nobody (unassigned)*.
 
 **The board** (`#/accountability`, the home page) lists the blanks by person (what each is
-responsible for, and how many more they're accountable for) or by project, with a chip per
+responsible for, and how many more they're accountable for), by role, or by project, with a chip per
 field to show only that one, and **Mine**. Click a blank to open its row in the row editor
 and fill it there (ANDON or Collections rows that don't exist yet open the Universe row).
 
