@@ -9,7 +9,7 @@
 
 /* version: bump it with every release and add an entry to CHANGELOG.md (newest first, same number).
    The top bar shows it beside the name, so people can see at a glance which version they're running. */
-export const APP = { name: "Sanctum", key: "polaris", version: "2.2.0", env: "live" };   // env: "live" | "test"
+export const APP = { name: "Sanctum", key: "polaris", version: "2.2.1", env: "live" };   // env: "live" | "test"
 export const ENV_LABEL = APP.env === "test" ? "Test copy" : "";         // shown in the header, never a gate
 
 /* The connection service: the shared Lark proxy (Render). `service` is the name its
@@ -198,6 +198,9 @@ export const ACCOUNTABILITY = {
   // page). While a project has no tribe yet, it's every Tribe Lead: they decide together
   // (the Win meeting) which tribe takes it and who its PM is.
   tribeRole: { role: "Tribe Lead", table: "andon", field: "TRIBE" },
+  // Values that mean "nothing chosen yet": counted as blank, so the project is asked for a
+  // real one (and its Tribe Lead is every Tribe Lead).
+  blankValues: { "TRIBE": ["NO TRIBE ASSIGNED"] },
   // When a role has nobody in it, the item goes to the first of these that has someone.
   fallback: ["AM", "BD", "Ops Lead"],
   rules: [
