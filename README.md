@@ -118,6 +118,28 @@ Value). Until something is saved there, the starting rules apply. With no admins
 anyone who can edit the Variables table can change them; after that only the admins (the
 page checks; Lark's own permissions on the Variables table are what really protect it).
 
+**The Mancom page** (`#/mancom`, admins and editors) brings the weekly Mancom sheet (the
+"4DX Management Scoreboard", a new Google Sheet each week) into Lark. Download it as .xlsx and
+choose it there; [`js/xlsx.js`](js/xlsx.js) reads it in the browser (no library) and
+[`js/mancom.js`](js/mancom.js) turns it into changes:
+
+| Tab | Gives |
+| --- | ----- |
+| Revenue - *Tribe* | the project's ANDON TRIBE (the tab's tribe, matched to a TRIBE option) |
+| RFP-RFQ - Pitch Pipeline | Mancom Phase; Owner as AM |
+| Leads - BD Pipeline | BD, AM |
+| any | Client, only where the Universe has none |
+
+The sheet has no project codes, so rows are matched to Universe projects by name: a match
+confirmed on the page is remembered (Variables rows `sanctum_match`), a clear best name match
+(`autoMatch`, `margin`) is suggested, and the rest are picked or skipped by a person. People are
+nicknames: the Admin page's **Nicknames** (`accountability_alias`) say who each is; a nickname
+that is the first name of exactly one person is recognised too. Two rows that disagree are left
+unticked. Applied changes are written like the row editor's (re-read first; a cell someone
+changed meanwhile isn't overwritten) and logged as `sanctum_change` rows. The tabs and their
+columns are `ACCOUNTABILITY.mancom` in `js/config.js`. Opcom and Win-meeting sheets can be added
+the same way once their layout is known.
+
 **The daily digest** ([`tools/notify.mjs`](tools/notify.mjs)) posts the blanks to a Telegram
 group every weekday at 9:00 Manila, by person, @mentioning the handles set on the Admin page.
 It lists project codes, names, stages and fields only (no amounts, no clients), marks what's

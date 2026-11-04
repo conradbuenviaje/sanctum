@@ -474,3 +474,27 @@ main { padding-bottom: 120px; }
 #boardTitle .badge { vertical-align: middle; font-size: 12px; }
 /* Someone added by email (no Lark id yet): dashed, with a pencil to set their Lark name. */
 .chip.is-email { background: transparent; border: 1px dashed var(--brand-strong); }
+
+/* ---- the Mancom page (#/mancom, js/mancomview.js) ---------------------------------- */
+.view-mancom { max-width: 1100px; margin: 0 auto; padding-bottom: 40px; }
+.mc-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13.5px; }
+.mc-groups, .mc-changes, .mc-unmatched, .mc-nicks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.mc-group { padding-top: 10px; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.mc-via { font-size: 12.5px; }
+.mc-changes li { display: grid; gap: 2px; padding-left: 4px; }
+.mc-changes li.is-conflict { border-left: 3px solid var(--warn); padding-left: 8px; }
+.mc-change { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13.5px; cursor: pointer; }
+.mc-change .i { width: 13px; height: 13px; color: var(--muted); }
+.mc-from { color: var(--muted); text-decoration: line-through; }
+.mc-to { font-weight: 700; }
+.mc-src { margin-left: 26px; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.mc-unmatched li, .mc-nicks li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 10px; align-items: center; font-size: 13.5px;
+                                 padding-top: 8px; border-top: 1px solid var(--line); }
+.mc-unmatched select, .mc-nicks select { width: 100%; }
+.mc-notes summary { cursor: pointer; font-weight: 700; }
+#mancomPick.is-disabled { pointer-events: none; opacity: .6; }
+@media (max-width: 640px) { .mc-unmatched li, .mc-nicks li { grid-template-columns: 1fr; } }
+
+.adm-nicks { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.adm-nicks li { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13.5px; }
+.adm-nick-add { flex-wrap: wrap; }
