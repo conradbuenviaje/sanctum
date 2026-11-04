@@ -9,7 +9,7 @@
 
 /* version: bump it with every release and add an entry to CHANGELOG.md (newest first, same number).
    The top bar shows it beside the name, so people can see at a glance which version they're running. */
-export const APP = { name: "Sanctum", key: "polaris", version: "2.2.1", env: "live" };   // env: "live" | "test"
+export const APP = { name: "Sanctum", key: "polaris", version: "2.3.0", env: "live" };   // env: "live" | "test"
 export const ENV_LABEL = APP.env === "test" ? "Test copy" : "";         // shown in the header, never a gate
 
 /* The connection service: the shared Lark proxy (Render). `service` is the name its
@@ -184,6 +184,16 @@ export const ACCOUNTABILITY = {
   since: "2025-01-01",
   // Universe rows marked with one of these custom tags aren't checked.
   skipTags: ["Hidden"],
+  // More ways to leave projects out (the Admin page's Scope): a project whose value in one of
+  // these columns is excluded there isn't checked. `table` is where the value is read:
+  // the project's Universe row, or its ANDON row.
+  scopeFilters: [
+    { key: "status", label: "Status", table: "universe", field: "Status" },
+    { key: "phase", label: "Mancom Phase", table: "universe", field: "Mancom Phase" },
+    { key: "bu", label: "Business Unit", table: "universe", field: "Business Unit" },
+    { key: "tribe", label: "Tribe", table: "andon", field: "TRIBE" },
+    { key: "client", label: "Client", table: "universe", field: "Client" },
+  ],
   // The Universe Status of an active project, in order: a rule applies from its stage onward.
   pipeline: [STAGE.brief, STAGE.pitch, STAGE.won, STAGE.signed, STAGE.collect, "For Closing", "Fully Closed"],
   lostStatuses: ["Lost", "Stalled", "Archived"],
@@ -193,7 +203,7 @@ export const ACCOUNTABILITY = {
   projectRoles: { BD: { table: "universe", field: "BD" }, AM: { table: "universe", field: "AM" },
                   PM: { table: "andon", field: "PM (LEAD)" } },
   // Roles held by named people for every project (set on the Admin page).
-  namedRoles: ["Universe Keeper", "Ops Lead", "Finance", "Account Director", "Project Director"],
+  namedRoles: ["Universe Keeper", "Head of Operations", "Finance", "Account Director", "Project Director"],
   // The Tribe Lead of a project is the lead of its ANDON TRIBE (set per tribe on the Admin
   // page). While a project has no tribe yet, it's every Tribe Lead: they decide together
   // (the Win meeting) which tribe takes it and who its PM is.
@@ -202,14 +212,14 @@ export const ACCOUNTABILITY = {
   // real one (and its Tribe Lead is every Tribe Lead).
   blankValues: { "TRIBE": ["NO TRIBE ASSIGNED"] },
   // When a role has nobody in it, the item goes to the first of these that has someone.
-  fallback: ["AM", "BD", "Ops Lead"],
+  fallback: ["AM", "BD", "Head of Operations"],
   rules: [
     { id: "code",      table: "universe",    field: "Project Code",           from: STAGE.brief,   lost: true,  responsible: "Universe Keeper", accountable: "AM" },
     { id: "bd",        table: "universe",    field: "BD",                     from: STAGE.brief,   lost: true,  responsible: "Universe Keeper", accountable: "AM" },
     { id: "am",        table: "universe",    field: "AM",                     from: STAGE.brief,   lost: true,  responsible: "Account Director", accountable: "Account Director" },
     { id: "client",    table: "universe",    field: "Client",                 from: STAGE.brief,   lost: false, responsible: "Universe Keeper", accountable: "BD" },
     { id: "rfp",       table: "universe",    field: "RFP Received Date",      from: STAGE.brief,   lost: false, responsible: "Universe Keeper", accountable: "BD" },
-    { id: "andon",     table: "andon",       field: "@row",                   from: STAGE.brief,   lost: false, responsible: "AM",              accountable: "Ops Lead" },
+    { id: "andon",     table: "andon",       field: "@row",                   from: STAGE.brief,   lost: false, responsible: "AM",              accountable: "Head of Operations" },
     { id: "pm",        table: "andon",       field: "PM (LEAD)",              from: STAGE.brief,   lost: false, responsible: "Tribe Lead",      accountable: "Project Director" },
     { id: "tribe",     table: "andon",       field: "TRIBE",                  from: STAGE.brief,   lost: false, responsible: "Tribe Lead",      accountable: "Project Director" },
     { id: "amount",    table: "universe",    field: "Amount (VAT-Ex.) (PHP)", from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "BD" },
