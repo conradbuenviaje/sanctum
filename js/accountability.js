@@ -142,6 +142,19 @@ export function configWrites(existing, wanted) {
   return { create, update, remove };
 }
 
+/* Saved rules whose Responsible or Accountable differ from the starting rule with the
+   same id (the starting rules changed since they were saved, or an admin changed them):
+   [{ id, field, from: {responsible, accountable}, to: {responsible, accountable} }]. */
+export function rulesBehindDefaults(rules, defaults) {
+  const byId = new Map(defaults.map(r => [r.id, r]));
+  return rules.flatMap(r => {
+    const d = byId.get(r.id);
+    if (!d || (d.responsible === r.responsible && d.accountable === r.accountable)) return [];
+    return [{ id: r.id, field: r.field, from: { responsible: r.responsible, accountable: r.accountable },
+              to: { responsible: d.responsible, accountable: d.accountable } }];
+  });
+}
+
 /* Is this person (the signed-in user: {name, email}) an admin? With no admins saved
    yet, everyone is (someone has to add the first). */
 export function isAdmin(cfg, user) {

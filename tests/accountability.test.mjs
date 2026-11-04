@@ -6,7 +6,7 @@ import { ACCOUNTABILITY, RULES } from "../js/config.js";
 import {
   configFrom, configValues, configWrites, isAdmin, samePerson, inScope, stageOf, applies, resolve, accountabilityItems,
   byPerson, byProject, fieldCounts, itemMatches, nextState, digestMessages, pack, telegramHandle, UNASSIGNED, ROW,
-  dismissalsFrom, dismissalValue,
+  dismissalsFrom, dismissalValue, rulesBehindDefaults,
 } from "../js/accountability.js";
 
 const user = (id, name) => ({ id, name, en_name: name, email: `${id}@x.com` });
@@ -296,4 +296,15 @@ test("AM goes to the Account Director; PM and TRIBE to the project's Tribe Lead,
   const back = configFrom(ACCOUNTABILITY, configValues(cfg).map((v, i) => rec(`n${i}`, { Variable: ACCOUNTABILITY.variables[v.kind], Value: v.value })), cols);
   assert.deepEqual(Object.keys(back.tribeLeads).sort(), ["Alpha", "Marketing"]);
   assert.equal(back.tribeLeads.Marketing[0].name, "Paz Director");
+});
+
+test("saved rules behind the starting rules are found by id, and only for who's on them", () => {
+  const saved = ACCOUNTABILITY.rules.map(r => ({ ...r }));
+  Object.assign(saved.find(r => r.id === "am"), { responsible: "Universe Keeper", accountable: "BD" });
+  Object.assign(saved.find(r => r.id === "pm"), { from: "For Pitching" });                 // a stage change isn't flagged
+  saved.push({ id: "custom", table: "universe", field: "Client", responsible: "AM", accountable: "AM" });   // no starting rule: left alone
+  const behind = rulesBehindDefaults(saved, ACCOUNTABILITY.rules);
+  assert.deepEqual(behind.map(b => b.id), ["am"]);
+  assert.deepEqual(behind[0].to, { responsible: "Account Director", accountable: "Account Director" });
+  assert.deepEqual(rulesBehindDefaults(ACCOUNTABILITY.rules, ACCOUNTABILITY.rules), []);
 });

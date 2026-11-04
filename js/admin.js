@@ -5,7 +5,7 @@
    the board and the next digest use it. */
 
 import { ACCOUNTABILITY } from "./config.js";
-import { configValues, configWrites, isAdmin, telegramHandle, ROW, TABLE_NAMES } from "./accountability.js";
+import { configValues, configWrites, isAdmin, telegramHandle, rulesBehindDefaults, ROW, TABLE_NAMES } from "./accountability.js";
 import { addVariable, updateVariable, deleteVariable } from "./ops.js";
 import { $, h, ic, toast, busy, confirmSheet } from "./ui.js";
 import { describe, isDeadToken } from "./net.js";
@@ -184,9 +184,27 @@ export function createAdmin(ctx) {
             changed();
           } }, ic("plus"), "Add rule"),
           h("button", { type: "button", class: "btn btn-sm btn-ghost", disabled: !can, onclick: () => { d.rules = clone(ACCOUNTABILITY.rules); changed(); } }, "Use the starting rules"))),
+      behindNote(d, can),
       h("div", { class: "tbl-wrap" }, h("table", { class: "tbl adm-rules" },
         h("thead", null, h("tr", null, ["On", "Table", "Field", "Required from", "Lost", "Responsible", "Accountable", ""].map(t => h("th", { scope: "col" }, t)))),
         h("tbody", null, rows))));
+  }
+
+  /* Rules saved before the starting rules changed who's on them (AM, PM, TRIBE in 2.2.0):
+     offer to bring just those up to date, leaving every other rule as it is. */
+  function behindNote(d, can) {
+    const behind = rulesBehindDefaults(d.rules, ACCOUNTABILITY.rules);
+    if (!behind.length) return null;
+    const who = (x) => `R ${x.responsible} · A ${x.accountable}`;
+    return h("div", { class: "callout callout-info" }, ic("info"),
+      h("div", null,
+        h("p", null, `${behind.length} saved rule${behind.length === 1 ? "" : "s"} name${behind.length === 1 ? "s" : ""} different people than Sanctum's starting rules. Update ${behind.length === 1 ? "it" : "them"} unless an admin changed ${behind.length === 1 ? "it" : "them"} on purpose:`),
+        h("ul", null, behind.map(b => h("li", null, h("b", null, b.field), `: ${who(b.from)} → ${who(b.to)}`))),
+        h("button", { type: "button", class: "btn btn-sm", disabled: !can, onclick: () => {
+          for (const b of behind) Object.assign(d.rules.find(r => r.id === b.id), b.to);
+          changed();
+        } }, `Update ${behind.length === 1 ? "this rule" : `these ${behind.length}`}`),
+        " ", h("span", { class: "set-help" }, "Then Save changes.")));
   }
 
   /* ---- Telegram handles ---- */

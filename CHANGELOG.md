@@ -18,6 +18,9 @@ two numbers differ.
     is listed, since they decide together at the Win meeting which tribe takes it.
 - **Admin page:** new **Tribe leads** section, one per ANDON tribe (the Project Director can
   lead the Marketing tribe too), and the Account Director and Project Director roles.
+- **Admin page:** saved rules that name different people than the starting rules (like the AM,
+  PM and TRIBE rules saved before this version) are listed above the rules, with **Update**
+  to bring just those up to date. Other rules are left as they are.
 
 ## 2.1.0 · Nov 3, 2026
 
