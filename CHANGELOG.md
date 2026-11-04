@@ -9,6 +9,30 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.5.0 · Nov 4, 2026
+
+- **The board is now called Open Items** (the tab, the page and the daily digest's heading).
+  Its address stays `#/accountability`, so old links still work.
+- **Everyone tagged in a role or as a tribe lead can edit.** Besides the admins, the people on
+  the Admin page's Roles (Finance, Account Director…) and Tribe leads can fill blanks, dismiss
+  and restore them, and use Data Audit. Only admins see the Admin page. Everyone else views.
+- **Sanctum knows who you are by your Lark id** (new logins), not just your name, so two people
+  with the same name can't be mixed up.
+- **People added by email** show dashed on the Admin page, with a pencil to set their name as
+  it is in Lark: Lark doesn't tell Sanctum a person's email when they log in, so their name is
+  how Sanctum recognises them until they appear in the tables.
+
+## 2.4.0 · Nov 4, 2026
+
+- **Everyone who isn't an admin is a viewer.** They see only the Accountability board, marked
+  *View only*: a blank opens its row read-only, and there's no Dismiss or Restore. Data Audit,
+  the Queue and the Admin page are hidden from them (opening one goes to the board), and so is
+  changing the custom tags in Settings.
+- **The Admin and Data Audit tabs show only for admins.**
+- **A table you can't open no longer stops the page.** Only the Universe is needed: if your
+  login can't read another table (staff often can't open the approval tables, or ANDON), the
+  board still loads, only what uses that table is off, and Settings says which one.
+
 ## 2.3.1 · Nov 4, 2026
 
 - **The role stays "Ops Lead".** 2.3.0 renamed the starting role to Head of Operations, which

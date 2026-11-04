@@ -7,7 +7,7 @@ import {
   configFrom, configValues, configWrites, isAdmin, samePerson, inScope, stageOf, applies, resolve, accountabilityItems,
   byPerson, byProject, fieldCounts, itemMatches, nextState, digestMessages, pack, telegramHandle, UNASSIGNED, ROW,
   dismissalsFrom, dismissalValue, rulesBehindDefaults, isBlankFor,
-  excludedBy, filterValues, renameRole, byRole,
+  excludedBy, filterValues, renameRole, byRole, isEditor,
 } from "../js/accountability.js";
 
 const user = (id, name) => ({ id, name, en_name: name, email: `${id}@x.com` });
@@ -370,4 +370,17 @@ test("grouping by role: each item under its Responsible and Accountable role, in
   assert.ok(g.responsible.includes(same) && !g.accountable.includes(same));
   const total = groups.reduce((n, x) => n + x.responsible.length, 0);
   assert.equal(total, res.items.length);
+});
+
+test("editors: admins and anyone tagged in a role or as a tribe lead; Lark ids decide when both sides have one", () => {
+  const cfg = defaults();
+  cfg.admins = [{ id: "ou_admin", name: "Ada Admin", email: "" }];
+  cfg.roles.Finance = [{ id: "", name: "Sharleen Cruz", email: "sharleenerika.c@met.events" }];
+  cfg.tribeLeads = { "TRIBE A - Moonton": [{ id: "ou_tl", name: "Andew James Sarmiento", email: "" }] };
+  assert.equal(isEditor(cfg, { id: "ou_admin", name: "Whatever" }), true);                         // an admin, by id
+  assert.equal(isEditor(cfg, { id: "ou_tl", name: "Someone Else" }), true);                       // a tribe lead, by id
+  assert.equal(isEditor(cfg, { id: "ou_x", name: "Sharleen Erika Cruz" }), true);                 // added by email: by name
+  assert.equal(isEditor(cfg, { id: "ou_y", name: "Andew James Sarmiento" }), false);              // same name, other id: not them
+  assert.equal(isEditor(cfg, { id: "ou_z", name: "Random Person" }), false);
+  assert.equal(isAdmin(cfg, { id: "ou_tl", name: "Andew James Sarmiento" }), false);              // editing isn't the Admin page
 });

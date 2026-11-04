@@ -88,10 +88,21 @@ PM (LEAD) or TRIBE is the Tribe Lead's, accountable to the Project Director. Whe
 role has nobody in it, the blank goes to the first of the fallback roles that has someone
 (AM, then BD, then Ops Lead); with nobody there either, it's listed under *Nobody (unassigned)*.
 
-**The board** (`#/accountability`, the home page) lists the blanks by person (what each is
+**The board, Open Items** (`#/accountability`, the home page) lists the blanks by person (what each is
 responsible for, and how many more they're accountable for), by role, or by project, with a chip per
 field to show only that one, and **Mine**. Click a blank to open its row in the row editor
 and fill it there (ANDON or Collections rows that don't exist yet open the Universe row).
+
+**Who sees what.** Admins (the Admin page's list) see everything. Editors, everyone tagged in
+a role or as a tribe lead on the Admin page, see everything but the Admin page: they can fill and
+dismiss blanks. People are recognised by their Lark id when both sides have one, else by name
+(every word of the saved name in their Lark name; someone added by email gets their Lark name set
+with the pencil). Everyone else is a viewer:
+only the Open Items board, read-only (a blank opens its row to look at; no Dismiss, no
+Admin page, no Data Audit). Sanctum reads Lark as the person logged in, so a viewer needs at
+least *view* access to the Universe Base (and ANDON, Collections and Variables to see those
+blanks and the saved rules). A table they can't open is left out with a note; only the
+Universe is required.
 
 **Dismissing a blank.** The **×** beside a blank on the board dismisses it, with a reason
 (required, at least a few words). The dismissal is a Variables row named

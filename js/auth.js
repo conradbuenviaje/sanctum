@@ -133,7 +133,8 @@ export async function loadUser() {
   if (!t) return null;
   const j = await lark("GET", `${LARK.api}/authen/v1/user_info`, { token: t.access_token, read: true });
   const u = j.data || {};
-  const user = { name: u.name || u.en_name || "", avatar: u.avatar_thumb || u.avatar_url || "", email: u.email || "" };
+  // open_id: the same id the tables' person fields carry, so Sanctum can tell who you are by it.
+  const user = { id: u.open_id || "", name: u.name || u.en_name || "", avatar: u.avatar_thumb || u.avatar_url || "", email: u.email || "" };
   store("session", KEY.user, user);
   return user;
 }

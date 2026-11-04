@@ -21,7 +21,7 @@ import { createCollections } from "./collections.js";
 import { createAndon } from "./andon.js";
 import { createSources, SOURCE_KINDS } from "./sources.js";
 import { createQueue } from "./queue.js";
-import { configFrom, accountabilityItems, dismissalsFrom } from "./accountability.js";
+import { configFrom, accountabilityItems, dismissalsFrom, isAdmin, isEditor } from "./accountability.js";
 import { createBoard } from "./board.js";
 import { createAdmin } from "./admin.js";
 
@@ -185,7 +185,17 @@ const collections = createCollections(ctx);
 const andon = createAndon(ctx);
 const sources = createSources(ctx);
 const queue = ctx.queue = createQueue(ctx, inbox);   // Push hands its write to the queue
-ctx.openRow = (table, id) => inbox.openRecord(table, id);   // the board's fields open the row editor
+// The board's fields open the row editor; for people who may only look, the row read-only.
+ctx.openRow = (table, id) => (isViewer() ? inbox.viewRecord(table, id) : inbox.openRecord(table, id));
+/* Admins see everything. Editors (tagged in a role or as a tribe lead) see everything but
+   the Admin page. Everyone else is a viewer: the Open Items board only, read-only.
+   Unknown (null) until both the rules and who's logged in are in. */
+function access() {
+  if (!S.acc || !S.userLoaded) return null;
+  return isAdmin(S.acc.cfg, S.user) ? "admin" : isEditor(S.acc.cfg, S.user) ? "editor" : "viewer";
+}
+const isViewer = () => !["admin", "editor"].includes(access());
+ctx.isViewer = isViewer;
 const board = createBoard(ctx);
 const admin = createAdmin(ctx);
 
@@ -252,11 +262,17 @@ function onRoute() {
 /* ======================= rendering ======================= */
 const TAB_TITLES = { brief: "Briefs", par: "PARs", invoice: "Invoices", andon: "ANDON", audit: "Audit" };
 function pageTitle() {
-  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Accountability", admin: "Admin" }[S.view] || TAB_TITLES[S.tab];
+  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Open Items", admin: "Admin" }[S.view] || TAB_TITLES[S.tab];
   return `${name} · ${APP.name}`;
 }
 
 function render() {
+  // A viewer who lands on Data Audit, the Queue or the Admin page goes to the board; an editor, from the Admin page.
+  const who = access();
+  if ((who === "viewer" && ["work", "queue", "admin"].includes(S.view)) || (who === "editor" && S.view === "admin")) {
+    location.hash = "#/accountability";
+    return;
+  }
   for (const v of $$(".view")) v.classList.toggle("active", v.dataset.view === S.view);
   document.title = pageTitle();
   renderHeader();
@@ -310,9 +326,11 @@ function renderHeader() {
   $("#overrideBadge").title = over.length ? `Overridden in this browser. ${over.join(". ")}` : "";
   $("#sessionPill").hidden = !signedIn;
   $("#meLink").hidden = !signedIn;
-  $("#workLink").hidden = !signedIn;
+  // Data Audit is for admins and editors, Admin for admins only (hidden until that's known, so they never flash).
+  const admin = access() === "admin", editor = admin || access() === "editor";
+  $("#workLink").hidden = !signedIn || !editor;
   $("#boardLink").hidden = !signedIn;
-  $("#adminLink").hidden = !signedIn;
+  $("#adminLink").hidden = !signedIn || !admin;
   for (const a of $$(".nav a")) {
     if (a.dataset.nav === S.view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -360,7 +378,7 @@ async function login(returnTo) {
    cleared the login; drop what's on screen. Drafts stay, so a new login picks up where this left off. */
 function sessionEnded(message) {
   for (const d of document.querySelectorAll("dialog[open]")) d.close();   // any open sheet: the push sheet or invoice details
-  S.data = null; S.lists = null; S.user = null; S.loadError = null;
+  S.data = null; S.lists = null; S.user = null; S.userLoaded = false; S.loadError = null;
   S.loginNote = message || "Your login ended after about 2 hours. Log in again to keep going.";
   S.returnTo = location.hash || "#/accountability";
   if (S.view !== "settings") S.view = "login";
@@ -425,32 +443,36 @@ async function loadData({ quiet = false } = {}) {
 function recompute() {
   const d = S.data;
   const uni = indexUniverse(d.universe, { ignoreField: RULES.universeIgnoreField });
-  const coll = indexCollections(d.collections);
-  const brief = briefCards(d.brief, uni, RULES);
+  // A table this login couldn't read is missing: the lists built from it stay empty
+  // (Settings says which table couldn't be read).
+  const has = (...keys) => keys.every(k => Array.isArray(d[k]));
+  const none = () => ({ cards: [], hidden: {} });
+  const coll = indexCollections(d.collections || []);
+  const brief = has("brief") ? briefCards(d.brief, uni, RULES) : none();
   const pending = new Set(brief.cards.map(c => c.code).filter(Boolean));
   S.lists = {
     brief,
-    par: parCards(d.par, d.brief, uni, pending, RULES),
-    invoice: collectionCards(d.invoice, uni, coll, pending, RULES),
+    par: has("par", "brief") ? parCards(d.par, d.brief, uni, pending, RULES) : none(),
+    invoice: has("invoice", "collections") ? collectionCards(d.invoice, uni, coll, pending, RULES) : none(),
   };
   if (d.andon) {
-    S.lists.andon = briefCards(d.brief, indexUniverse(d.andon), RULES,
-      { allDepartments: true, kind: "andon" });   // the same IGNORE box as the Universe
+    S.lists.andon = has("brief") ? briefCards(d.brief, indexUniverse(d.andon), RULES,
+      { allDepartments: true, kind: "andon" }) : none();   // the same IGNORE box as the Universe
     // …and each ANDON row's Approval, from the Project Approval with its project code.
-    const approvals = approvalCards(d.andon, d.par, RULES, { fields: fieldsOf("andon") });
+    const approvals = has("par") ? approvalCards(d.andon, d.par, RULES, { fields: fieldsOf("andon") }) : { cards: [] };
     S.lists.andon.cards = [...S.lists.andon.cards, ...approvals.cards].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
     S.pmPool = pmPool(d.andon, d.universe);
   }
   // The audit: Universe and ANDON cells left blank that the brief can fill.
-  const byCode = briefsByCode(d.brief, RULES);
+  const byCode = briefsByCode(d.brief || [], RULES);
   // Custom tags (Settings > Custom tags), from the Variables table: a row marked with
   // one leaves the audit list for that tag's group at the bottom.
   S.tagCols = d.variables ? variableColumns(fieldsOf("variables"), d.variables, RULES.tags) : null;
   S.customTags = customTagsFrom(d.variables, S.tagCols, RULES.tags.variable);
   // (only in the tables RULES.tags.tables lists: ANDON has no Tags column)
   const tagsFor = (t) => (RULES.tags.tables.includes(t) ? { tags: S.customTags.map(x => x.tag), tagField: RULES.tags.field } : {});
-  const uniAudit = auditCards("universe", d.universe, d.brief, RULES, { hide: S.auditHide, byCode, fields: fieldsOf("universe"), ...tagsFor("universe") });
-  const andonAudit = d.andon ? auditCards("andon", d.andon, d.brief, RULES,
+  const uniAudit = auditCards("universe", d.universe, d.brief || [], RULES, { hide: S.auditHide, byCode, fields: fieldsOf("universe"), ...tagsFor("universe") });
+  const andonAudit = d.andon ? auditCards("andon", d.andon, d.brief || [], RULES,
     { hide: S.auditHide, byCode, options: ctx.optionsOf("andon"), fields: fieldsOf("andon"), ...tagsFor("andon") })
     : { cards: [], tagged: [], hidden: { noBrief: 0, hidden: 0 } };
   S.lists.audit = {
@@ -458,7 +480,7 @@ function recompute() {
     tagged: tagGroups([...uniAudit.tagged, ...andonAudit.tagged], S.customTags.map(x => x.tag)),
     hidden: { hiddenHere: uniAudit.hidden.hidden + andonAudit.hidden.hidden },
   };
-  S.pool = peoplePool(d.universe, d.brief);
+  S.pool = peoplePool(d.universe, d.brief || []);
   // Accountability: every blank the rules ask for, and who's on it (the board, the Admin page).
   const acc = configFrom(ACCOUNTABILITY, d.variables, S.tagCols);
   S.acc = { cfg: acc, ...accountabilityItems({ universe: d.universe, andon: d.andon, collections: d.collections }, acc, {
@@ -655,6 +677,7 @@ function renderTags() {
   const box = $("#tagsBox");
   const note = (text, cls = "set-sub") => box.replaceChildren(h("p", { class: cls }, text));
   if (!auth.currentToken()) return note("Log in to see and change the custom tags.");
+  if (access() !== "admin") return note("Only admins can change the custom tags.");
   if (!S.data) return note(S.loading ? "Loading…" : S.loadError ? describe(S.loadError) : "Not loaded yet.");
   if (!tables.variables) return note("There's no Variables table in js/config.js (TABLES.variables).");
   if (!S.data.variables) {
@@ -848,8 +871,8 @@ setInterval(tickSession, 20000);
   }
   if (auth.currentToken()) {
     S.user = null;
-    auth.loadUser().then((u) => { S.user = u; renderHeader(); if (["settings", "accountability", "admin"].includes(S.view)) render(); })
-      .catch(() => {});   // no name or picture is fine; a dead login already ended the session (net.js)
+    auth.loadUser().then((u) => { S.user = u; S.userLoaded = true; render(); })
+      .catch(() => { S.userLoaded = true; render(); });   // no name or picture is fine (a viewer then); a dead login already ended the session (net.js)
   } else if (auth.hadSession() && !S.loginNote) {
     S.loginNote = "Your login ended after about 2 hours. Log in again to keep going.";
     auth.clearSession();

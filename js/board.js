@@ -3,7 +3,8 @@
    Accountable for), by role, or by project. A field opens its row in the row editor
    (js/inbox.js), so it can be filled right there; the edit goes through the queue.
    A blank that doesn't apply can be dismissed, with a reason (kept in the Variables
-   table with who and when, for everyone and the digest), and restored. Every card
+   table with who and when, for everyone and the digest), and restored. Everyone who
+   isn't an admin only views: a blank opens its row read-only, and nothing is dismissed. Every card
    folds, and a long one shows its first few projects until "Show all". */
 
 import { ACCOUNTABILITY } from "./config.js";
@@ -60,6 +61,8 @@ export function createBoard(ctx) {
     const shown = A.items.filter(it => itemMatches(it, B.query) && (!B.mine || mineOnly(it)));
     const items = B.field ? shown.filter(it => it.label === B.field) : shown;
     const projects = new Set(A.items.map(it => it.projectId)).size;
+    const viewing = ctx.isViewer();
+    $("#boardView").hidden = !viewing;
     sub.textContent = A.items.length
       ? `${A.items.length.toLocaleString()} blank${A.items.length === 1 ? "" : "s"} on ${projects.toLocaleString()} project${projects === 1 ? "" : "s"}, from ${fmtDay(A.cfg.since)} on`
         + (A.skipped && A.skipped.excluded ? ` · ${A.skipped.excluded} left out by the Scope` : "")
@@ -172,7 +175,7 @@ export function createBoard(ctx) {
   }
 
   /* ---- dismissing a blank (with a reason) and restoring it ---- */
-  const canDismiss = () => !!ctx.tables.variables && !!S.data.variables && !!S.tagCols && ctx.canWriteFor("variables");
+  const canDismiss = () => !ctx.isViewer() && !!ctx.tables.variables && !!S.data.variables && !!S.tagCols && ctx.canWriteFor("variables");
   async function dismiss(it) {
     if (!canDismiss()) {
       toast("Blanks can't be dismissed right now.", { type: "error", detail: ctx.problemsFor("variables")[0] || "The Variables table couldn't be read, or your login can only read." });
@@ -226,7 +229,7 @@ export function createBoard(ctx) {
           h("span", { class: "badge badge-muted" }, it.label)),
         h("p", { class: "acc-reason" }, `“${it.dismissal.reason}”`),
         h("p", { class: "acc-meta" }, [it.dismissal.by || "Someone", it.dismissal.at ? fmtWhen(it.dismissal.at) : ""].filter(Boolean).join(" · "),
-          " ", h("button", { type: "button", class: "linkish", disabled: !canDismiss() || null, onclick: () => restore(it) }, "Restore"))))))];
+          canDismiss() ? [" ", h("button", { type: "button", class: "linkish", onclick: () => restore(it) }, "Restore")] : null)))))];
   }
 
   /* One project's blanks on a list: the code, name and stage, then each field. */
@@ -241,11 +244,12 @@ export function createBoard(ctx) {
 
   /* A blank field: click to open its row and fill it, or × to dismiss it with a reason. */
   function fieldBtn(it, other, otherSide) {
+    const viewing = ctx.isViewer();
     const title = [`${it.label} is blank`, it.rowTable === "universe" && it.table !== "universe" ? `(opens the Universe row: there's no ${it.label.replace(/ row$/, "")} row yet)` : "",
-                   other ? `${otherSide}: ${whoText(other)}` : ""].filter(Boolean).join(" · ");
-    return h("span", { class: "acc-chip" },
-      h("button", { type: "button", class: "acc-field", title, onclick: () => ctx.openRow(it.rowTable, it.rowId) }, it.label, ic("pencil")),
-      h("button", { type: "button", class: "acc-dismiss", title: `Dismiss ${it.label} with a reason`, "aria-label": `Dismiss ${it.label} on ${it.code || it.project}`,
+                   other ? `${otherSide}: ${whoText(other)}` : "", viewing ? "Click to see the row" : ""].filter(Boolean).join(" · ");
+    return h("span", { class: `acc-chip${viewing ? " is-view" : ""}` },
+      h("button", { type: "button", class: "acc-field", title, onclick: () => ctx.openRow(it.rowTable, it.rowId) }, it.label, ic(viewing ? "eye" : "pencil")),
+      viewing ? null : h("button", { type: "button", class: "acc-dismiss", title: `Dismiss ${it.label} with a reason`, "aria-label": `Dismiss ${it.label} on ${it.code || it.project}`,
         onclick: () => dismiss(it) }, ic("x")));
   }
   const whoText = (r) => (r.unassigned ? "nobody" : `${r.people.map(p => p.name).join(", ")}${r.via ? ` (no ${r.role}, so the ${r.via})` : ` (${r.role})`}`);

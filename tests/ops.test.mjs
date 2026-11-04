@@ -216,3 +216,21 @@ test("fill blanks: a lost project's Status change goes out only over the status 
   assert.deepEqual(res2.skipped, ["Status"]);
   assert.equal(row2.fields["Status"], "Archived");
 });
+
+test("loading: only the Universe is required; a table this login can't read switches off only what uses it", async () => {
+  const tables = { universe: { app: "A", table: "tblUni" }, brief: { app: "A", table: "tblBrief" }, andon: { app: "B", table: "tblAndon" } };
+  const fake = (refuse) => async (method, url) => {
+    const t = (url.match(/tables\/(tbl\w+)/) || [])[1];
+    if (refuse.includes(t)) throw Object.assign(new Error("Lark 91403: Forbidden"), { json: { code: 91403 } });
+    if (url.includes("/fields")) return { data: { items: [{ field_name: "Project Code", type: 1 }], has_more: false } };
+    return { data: { items: [{ record_id: `${t}1`, fields: { "Project Code": "2025TEG-P0001" } }], has_more: false } };
+  };
+  const res = await loadEverything(fake(["tblBrief", "tblAndon"]), tables, RULES);
+  assert.deepEqual(Object.keys(res.data), ["universe"]);
+  assert.match(res.tableProblems.brief[0], /Project Brief: couldn't be read/);
+  assert.match(res.tableProblems.andon[0], /ANDON: couldn't be read/);
+  await assert.rejects(loadEverything(fake(["tblUni"]), tables, RULES), /Forbidden/);
+  // A login that has ended still ends the page, whichever table noticed.
+  const dead = async () => { throw Object.assign(new Error("login ended"), { deadToken: true }); };
+  await assert.rejects(loadEverything(dead, { brief: tables.brief }, RULES), /login ended/);
+});

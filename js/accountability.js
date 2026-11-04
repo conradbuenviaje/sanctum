@@ -167,6 +167,15 @@ export function rulesBehindDefaults(rules, defaults) {
   });
 }
 
+/* May this person change things (fill blanks, dismiss them, use Data Audit), short of the
+   Admin page? Admins, and everyone tagged in a named role (Account Director, Finance…) or
+   as a tribe lead. */
+export function isEditor(cfg, user) {
+  if (isAdmin(cfg, user)) return true;
+  const tagged = [...Object.values(cfg.roles || {}), ...Object.values(cfg.tribeLeads || {})].flat();
+  return tagged.some(p => samePerson(p, user));
+}
+
 /* Is this person (the signed-in user: {name, email}) an admin? With no admins saved
    yet, everyone is (someone has to add the first). */
 export function isAdmin(cfg, user) {
@@ -180,6 +189,9 @@ export function isAdmin(cfg, user) {
    the email when the app may read it, so the name is often all there is. */
 export function samePerson(p, user) {
   if (!p || !user) return false;
+  // Lark ids (open_id, ou_…) decide when both sides have one: the login gives the user's.
+  const pid = clean(p.id), uid = clean(user.id);
+  if (pid.startsWith("ou_") && uid.startsWith("ou_")) return pid === uid;
   const pe = clean(p.email).toLowerCase(), ue = clean(user.email).toLowerCase();
   if (pe && ue) return pe === ue;
   const words = (s) => clean(s).toLowerCase().split(/[\s.,]+/).filter(Boolean);
@@ -550,7 +562,7 @@ export function digestMessages(items, cfg, { now = Date.now(), state, previous, 
   const fresh = items.filter(isNew).length;
   const link = (hash, text) => (pageUrl ? `<a href="${esc(pageUrl.replace(/\/?$/, "/") + hash)}">${esc(text)}</a>` : esc(text));
   const head = [
-    `<b>Sanctum · accountability digest</b>${dateLabel ? ` · ${esc(dateLabel)}` : ""}`,
+    `<b>Sanctum · Open Items</b>${dateLabel ? ` · ${esc(dateLabel)}` : ""}`,
     items.length
       ? `${items.length} blank${items.length === 1 ? "" : "s"} on ${projects} project${projects === 1 ? "" : "s"} (from ${esc(cfg.since)} on)` +
         (before ? ` · ${fresh} new since the last digest` : "")
@@ -577,7 +589,7 @@ export function digestMessages(items, cfg, { now = Date.now(), state, previous, 
     if (onlyA.length) lines.push(`  Accountable for ${onlyA.length} more on others' lists`);
     blocks.push(lines.join("\n"));
   }
-  const foot = [...notes.map(n => `⚠️ ${esc(n)}`), pageUrl ? link("#/accountability", "Open Sanctum") : ""].filter(Boolean);
+  const foot = [...notes.map(n => `⚠️ ${esc(n)}`), pageUrl ? link("#/accountability", "See the Open Items in Sanctum") : ""].filter(Boolean);
   if (foot.length) blocks.push(foot.join("\n"));
   return pack(blocks, 3900);
 }
