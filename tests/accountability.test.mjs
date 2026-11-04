@@ -23,7 +23,7 @@ test("the defaults are used until the Admin page saves something", () => {
   assert.equal(cfg.since, "2025-01-01");
   assert.equal(cfg.rules.length, ACCOUNTABILITY.rules.length);
   assert.deepEqual(cfg.namedRoles, ["Universe Keeper", "Ops Lead", "Finance", "Account Director", "Project Director"]);
-  assert.deepEqual(cfg.saved, { rule: false, role: false, person: false, setting: false, admin: false, tribe: false });
+  assert.deepEqual(cfg.saved, { rule: false, role: false, person: false, setting: false, admin: false, tribe: false, alias: false });
   assert.ok(cfg.rules.every(r => r.on && r.responsible && r.accountable));
 });
 

@@ -9,6 +9,7 @@ import {
   configValues, configWrites, isAdmin, telegramHandle, rulesBehindDefaults, filterValues, renameRole, ROW, TABLE_NAMES,
 } from "./accountability.js";
 import { addVariable, updateVariable, deleteVariable } from "./ops.js";
+import { nickKey } from "./mancom.js";
 import { $, h, ic, toast, busy, confirmSheet, store, recall } from "./ui.js";
 import { describe, isDeadToken } from "./net.js";
 
@@ -64,7 +65,7 @@ export function createAdmin(ctx) {
         if (allOpen) SECTIONS.forEach(k => D.closed.add(k)); else D.closed.clear();
         store("local", KEY.closed, [...D.closed]); render();
       } }, ic(allOpen ? "sortUp" : "sortDown"), allOpen ? "Fold all" : "Unfold all")),
-      scopeCard(d, can), rolesCard(d, can), tribesCard(d, can), rulesCard(d, can), peopleCard(d, can), adminsCard(d, can),
+      scopeCard(d, can), rolesCard(d, can), tribesCard(d, can), rulesCard(d, can), nicknamesCard(d, can), peopleCard(d, can), adminsCard(d, can),
     ].filter(Boolean));
     bar.hidden = !dirty();
     $("#adminSave").disabled = !can || D.saving;
@@ -88,7 +89,7 @@ export function createAdmin(ctx) {
   const changed = () => { render(); };
 
   /* A section that folds: its title is a button; `meta` sits beside it (a count). */
-  const SECTIONS = ["scope", "roles", "tribes", "rules", "people", "admins"];
+  const SECTIONS = ["scope", "roles", "tribes", "rules", "nicknames", "people", "admins"];
   function section(key, title, meta, ...body) {
     const open = !D.closed.has(key);
     return h("section", { class: `card set-card adm-sec${open ? "" : " is-closed"}` },
@@ -333,6 +334,30 @@ export function createAdmin(ctx) {
           changed();
         } }, `Update ${behind.length === 1 ? "this rule" : `these ${behind.length}`}`),
         " ", h("span", { class: "set-help" }, "Then Save changes.")));
+  }
+
+  /* ---- nicknames (the Mancom sheet's "@Shanna", "Bopeep") ---- */
+  function nicknamesCard(d, can) {
+    d.aliases = d.aliases || {};
+    const people = pool().filter(p => /^ou_/.test(p.id || ""));
+    const nick = h("input", { type: "text", placeholder: "Nickname, e.g. Bopeep", maxlength: "40", disabled: !can });
+    const who = h("select", { disabled: !can, "aria-label": "Who it is" }, h("option", { value: "" }, "Who is it?"),
+      people.map(p => h("option", { value: p.id }, `${p.name}${p.email ? ` · ${p.email}` : ""}`)));
+    const add = () => {
+      const k = nickKey(nick.value);
+      const p = people.find(x => x.id === who.value);
+      if (!k || !p) return;
+      d.aliases[k] = { id: p.id, name: p.name, email: p.email || "" };
+      changed();
+    };
+    const list = Object.entries(d.aliases).sort((a, b) => a[0].localeCompare(b[0]));
+    return section("nicknames", "Nicknames", `${list.length}`,
+      h("p", { class: "set-sub" }, "The weekly Mancom sheet names people by nickname (@Shanna, Bopeep…). Say who each is, once; the Mancom page uses these every week, and asks about any it doesn't know."),
+      list.length ? h("ul", { class: "adm-nicks" }, list.map(([k, p]) => h("li", null, h("b", null, k), h("span", null, p.name),
+        can ? h("button", { type: "button", class: "icon-btn icon-sm", "aria-label": `Remove the nickname ${k}`, onclick: () => { delete d.aliases[k]; changed(); } }, ic("x")) : null)))
+        : h("p", { class: "set-help" }, "None yet."),
+      h("form", { class: "tag-add adm-nick-add", onsubmit: (e) => { e.preventDefault(); add(); } }, nick, h("label", { class: "select" }, who),
+        h("button", { type: "submit", class: "btn btn-sm", disabled: !can }, "Add")));
   }
 
   /* ---- Telegram handles ---- */

@@ -9,7 +9,7 @@
 
 /* version: bump it with every release and add an entry to CHANGELOG.md (newest first, same number).
    The top bar shows it beside the name, so people can see at a glance which version they're running. */
-export const APP = { name: "Sanctum", key: "polaris", version: "2.5.0", env: "live" };   // env: "live" | "test"
+export const APP = { name: "Sanctum", key: "polaris", version: "2.6.0", env: "live" };   // env: "live" | "test"
 export const ENV_LABEL = APP.env === "test" ? "Test copy" : "";         // shown in the header, never a gate
 
 /* The connection service: the shared Lark proxy (Render). `service` is the name its
@@ -176,7 +176,8 @@ const STAGE = { brief: "For CE/Pitch Creation", pitch: "For Pitching", won: "Won
 export const ACCOUNTABILITY = {
   // Variables rows the Admin page reads and writes (the Variable column's value for each kind).
   variables: { rule: "accountability_rule", role: "accountability_role", person: "accountability_person",
-               setting: "accountability_setting", admin: "accountability_admin", tribe: "accountability_tribe" },
+               setting: "accountability_setting", admin: "accountability_admin", tribe: "accountability_tribe",
+               alias: "accountability_alias" },
   // A blank dismissed on the board with a reason: one Variables row each (not a setting: the
   // Admin page's Save leaves these alone).
   dismissVariable: "accountability_dismissal",
@@ -243,6 +244,21 @@ export const ACCOUNTABILITY = {
     { id: "lossmonth", table: "universe",    field: "Loss Month",             from: "",            lost: true,  responsible: "AM",              accountable: "BD" },
     { id: "lossreason",table: "universe",    field: "Reason for Loss",        from: "",            lost: true,  responsible: "AM",              accountable: "BD" },
   ].map(r => ({ ...r, on: true })),
+  // The weekly Mancom sheet (js/mancom.js, the Mancom page). Each tab kind: `match` (its name,
+  // a regular expression; a Revenue tab's tribe is the part in brackets), `project` (the
+  // project column's header) and `columns` (value → header).
+  mancom: {
+    tabs: [
+      { kind: "revenue", match: "^Revenue\\s*-\\s*(.+)$", project: "Project", columns: {} },
+      { kind: "pitch", match: "Pitch Pipeline", project: "Project", columns: { phase: "Phase", am: "Owner" } },   // Owner = the AM
+      { kind: "leads", match: "BD Pipeline", project: "Project Name", columns: { bd: "BD", am: "AM" } },
+    ],
+    autoMatch: 0.6,     // a name match this good, and clearly the best, is suggested
+    margin: 0.1,        // …by at least this much over the next
+    // Variables rows: nicknames are a setting (the Admin page); confirmed matches and the change log aren't.
+    matchVariable: "sanctum_match",
+    logVariable: "sanctum_change",
+  },
   // The daily Telegram digest (tools/notify.mjs).
   digest: {
     perPerson: 8,         // projects listed under each person; the rest are counted

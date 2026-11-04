@@ -8,3 +8,5 @@ tests/.preview-fixture.json
 __pycache__/
 # What the daily digest saw last time (tools/notify.mjs)
 .digest-state.json
+# A Mancom sheet copied in to try the Mancom page locally (real business data): never commit
+tests/.mancom-*.xlsx

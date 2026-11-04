@@ -24,6 +24,7 @@ import { createQueue } from "./queue.js";
 import { configFrom, accountabilityItems, dismissalsFrom, isAdmin, isEditor } from "./accountability.js";
 import { createBoard } from "./board.js";
 import { createAdmin } from "./admin.js";
+import { createMancom } from "./mancomview.js";
 
 const tables = Object.fromEntries(Object.entries(TABLE_LINKS).map(([k, link]) => [k, parseBaseLink(link)]));
 const KEY = { theme: "polaris.theme", tab: "polaris.tab", draft: "polaris.draft" };
@@ -198,6 +199,7 @@ const isViewer = () => !["admin", "editor"].includes(access());
 ctx.isViewer = isViewer;
 const board = createBoard(ctx);
 const admin = createAdmin(ctx);
+const mancom = createMancom(ctx);
 
 /* ======================= the pane switcher =======================
    The title of the table beside the list (▾) opens a menu of the tables, to look at
@@ -230,7 +232,7 @@ for (const btn of $$(".pane-switch")) {
 }
 
 /* ======================= routes ======================= */
-const ROUTES = { "": "accountability", accountability: "accountability", admin: "admin", briefs: "brief", pars: "par", invoices: "invoice", andon: "andon", audit: "audit", universe: "brief", collections: "invoice", settings: "settings", queue: "queue" };
+const ROUTES = { "": "accountability", accountability: "accountability", admin: "admin", mancom: "mancom", briefs: "brief", pars: "par", invoices: "invoice", andon: "andon", audit: "audit", universe: "brief", collections: "invoice", settings: "settings", queue: "queue" };
 const parseRoute = () => ROUTES[(location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ""] || "accountability";
 
 function onRoute() {
@@ -240,7 +242,7 @@ function onRoute() {
     S.view = "login";
     S.returnTo = location.hash || "#/accountability";
   } else {
-    if (r === "queue" || r === "accountability" || r === "admin") {
+    if (r === "queue" || r === "accountability" || r === "admin" || r === "mancom") {
       S.view = r;
       render();
       if (!S.data && !S.loading && !S.loadError) loadData();
@@ -262,14 +264,14 @@ function onRoute() {
 /* ======================= rendering ======================= */
 const TAB_TITLES = { brief: "Briefs", par: "PARs", invoice: "Invoices", andon: "ANDON", audit: "Audit" };
 function pageTitle() {
-  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Open Items", admin: "Admin" }[S.view] || TAB_TITLES[S.tab];
+  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Open Items", admin: "Admin", mancom: "Mancom" }[S.view] || TAB_TITLES[S.tab];
   return `${name} · ${APP.name}`;
 }
 
 function render() {
   // A viewer who lands on Data Audit, the Queue or the Admin page goes to the board; an editor, from the Admin page.
   const who = access();
-  if ((who === "viewer" && ["work", "queue", "admin"].includes(S.view)) || (who === "editor" && S.view === "admin")) {
+  if ((who === "viewer" && ["work", "queue", "admin", "mancom"].includes(S.view)) || (who === "editor" && S.view === "admin")) {
     location.hash = "#/accountability";
     return;
   }
@@ -308,6 +310,7 @@ function render() {
   if (S.view === "settings") renderSettings();
   if (S.view === "accountability") board.render();
   if (S.view === "admin") admin.render();
+  if (S.view === "mancom") mancom.render();
   queue.paint();      // the Queue tab, its peek and the queue page
 }
 
@@ -329,6 +332,7 @@ function renderHeader() {
   // Data Audit is for admins and editors, Admin for admins only (hidden until that's known, so they never flash).
   const admin = access() === "admin", editor = admin || access() === "editor";
   $("#workLink").hidden = !signedIn || !editor;
+  $("#mancomLink").hidden = !signedIn || !editor;
   $("#boardLink").hidden = !signedIn;
   $("#adminLink").hidden = !signedIn || !admin;
   for (const a of $$(".nav a")) {

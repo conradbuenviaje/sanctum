@@ -25,7 +25,7 @@ const numOf = (v) => num(v) ?? (v && typeof v === "object" && Array.isArray(v.va
              saved: {kind: bool}, rows: {kind: [{id, key}]}, problems: [string] }. */
 export function configFrom(defaults, records, cols) {
   const names = defaults.variables;
-  const rows = { rule: [], role: [], person: [], setting: [], admin: [], tribe: [] };
+  const rows = { rule: [], role: [], person: [], setting: [], admin: [], tribe: [], alias: [] };
   const problems = [];
   if (cols) {
     for (const r of records || []) {
@@ -53,6 +53,12 @@ export function configFrom(defaults, records, cols) {
     const name = clean(x.value.tribe);
     if (name) tribeLeads[name] = normPeople(x.value.people);
   }
+  // Nicknames (the Mancom sheet's "@Shanna", "Bopeep"): key → person.
+  const aliases = {};
+  for (const x of rows.alias) {
+    const k = clean(x.value.nick).toLowerCase(), p = normPeople([x.value.person])[0];
+    if (k && p) aliases[k] = p;
+  }
   const peopleMap = {};
   for (const x of rows.person) {
     const id = clean(x.value.id);
@@ -68,7 +74,7 @@ export function configFrom(defaults, records, cols) {
     pipeline: defaults.pipeline, lostStatuses: defaults.lostStatuses, phaseStages: defaults.phaseStages,
     projectRoles: defaults.projectRoles, tribeRole: defaults.tribeRole, blankValues: defaults.blankValues || {},
     namedRoles: Object.keys(roles),
-    rules, roles, tribeLeads, people: peopleMap,
+    rules, roles, tribeLeads, aliases, people: peopleMap,
     admins: rows.admin.map(x => normPeople([x.value])[0]).filter(Boolean),
     saved: Object.fromEntries(Object.keys(rows).map(k => [k, rows[k].length > 0])),
     rows: Object.fromEntries(Object.entries(rows).map(([k, list]) => [k, list.map(x => ({ id: x.id, key: rowKey(k, x.value), text: x.text }))])),
@@ -108,6 +114,7 @@ function rowKey(kind, v) {
   if (kind === "rule") return `rule:${clean(v.id) || `${v.table}:${clean(v.field)}`}`;
   if (kind === "role") return `role:${clean(v.role).toLowerCase()}`;
   if (kind === "tribe") return `tribe:${clean(v.tribe).toLowerCase()}`;
+  if (kind === "alias") return `alias:${clean(v.nick).toLowerCase()}`;
   if (kind === "person" || kind === "admin") return `${kind}:${clean(v.id) || clean(v.email) || clean(v.name)}`;
   return "setting";
 }
@@ -124,6 +131,7 @@ export function configValues(cfg) {
   for (const [tribe, list] of Object.entries(cfg.tribeLeads || {})) {
     if (list.length) add("tribe", { tribe, people: list.map(p => ({ id: p.id, name: p.name, email: p.email })) });
   }
+  for (const [nick, p] of Object.entries(cfg.aliases || {})) add("alias", { nick, person: { id: p.id, name: p.name, email: p.email } });
   for (const p of Object.values(cfg.people)) if (p.telegram) add("person", { id: p.id, name: p.name, telegram: p.telegram });
   for (const a of cfg.admins) add("admin", { id: a.id, name: a.name, email: a.email });
   return out;

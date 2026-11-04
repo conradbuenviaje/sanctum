@@ -9,6 +9,25 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.6.0 · Nov 4, 2026
+
+- **New Mancom page: bring in the week's Mancom sheet.** Download the week's "4DX Management
+  Scoreboard" from Google Sheets as .xlsx and choose it on the Mancom page (admins and editors).
+  It's read in your browser, and Sanctum lists what it would change:
+  - **Tribe** (ANDON) from the Revenue tabs (Revenue - Moonton → TRIBE A - Moonton…),
+  - **Mancom Phase** and **AM** (the Owner) from RFP-RFQ - Pitch Pipeline,
+  - **BD** and **AM** from Leads - BD Pipeline,
+  - **Client**, only where the Universe has none.
+  Each change shows Lark's value, the sheet's, and the tab and row it came from; tick what's
+  right and **Apply**. Every applied change is logged in the Variables table (who, when, the
+  week, tab and row, before and after).
+- **Matching sheet rows to projects.** The sheet has no project codes: a row is matched by name,
+  a clear best match is suggested, and anything else waits for you to pick (or skip). One pick
+  covers every tab with that project name, and is remembered for next week once you apply.
+- **Nicknames.** The sheet names people by nickname (@Shanna, Bopeep…). The Mancom page asks who
+  each unknown one is, and the Admin page has a **Nicknames** list to keep them. A nickname
+  that's just someone's first name (and only one person has it) is recognised on its own.
+
 ## 2.5.0 · Nov 4, 2026
 
 - **The board is now called Open Items** (the tab, the page and the daily digest's heading).
