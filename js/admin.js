@@ -33,7 +33,7 @@ export function createAdmin(ctx) {
     const m = new Map();
     const add = (p) => { const id = p.id || p.email || p.name; if (id && !m.has(id)) m.set(id, { id: p.id || id, name: p.name || id, email: p.email || "" }); };
     [...(S.pool || []), ...(S.pmPool || [])].forEach(add);
-    if (D.draft) { Object.values(D.draft.roles).flat().forEach(add); D.draft.admins.forEach(add); }
+    if (D.draft) { [...Object.values(D.draft.roles), ...Object.values(D.draft.tribeLeads || {})].flat().forEach(add); D.draft.admins.forEach(add); }
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -53,7 +53,7 @@ export function createAdmin(ctx) {
     box.replaceChildren(...[
       why ? h("div", { class: "callout callout-warn" }, ic("alert"), h("div", null, why)) : null,
       ...S.acc.cfg.problems.map(p => h("div", { class: "callout callout-warn" }, ic("alert"), h("div", null, p))),
-      scopeCard(d, can), rolesCard(d, can), rulesCard(d, can), peopleCard(d, can), adminsCard(d, can),
+      scopeCard(d, can), rolesCard(d, can), tribesCard(d, can), rulesCard(d, can), peopleCard(d, can), adminsCard(d, can),
     ].filter(Boolean));
     bar.hidden = !dirty();
     $("#adminSave").disabled = !can || D.saving;
@@ -99,7 +99,7 @@ export function createAdmin(ctx) {
     };
     return h("section", { class: "card set-card" },
       h("h2", null, "Roles"),
-      h("p", { class: "set-sub" }, "BD, AM and PM come from each project's own rows (Universe BD and AM, ANDON PM (LEAD)). These roles are held by the same people for every project."),
+      h("p", { class: "set-sub" }, "BD, AM and PM come from each project's own rows (Universe BD and AM, ANDON PM (LEAD)), and the Tribe Lead from its tribe (below). These roles are held by the same people for every project."),
       h("ul", { class: "adm-roles" }, d.namedRoles.map(name => h("li", null,
         h("div", { class: "adm-role-head" }, h("b", null, name),
           can && !ruleUses(d, name) ? h("button", { type: "button", class: "icon-btn icon-sm", title: `Remove the ${name} role`, "aria-label": `Remove ${name}`,
@@ -109,7 +109,24 @@ export function createAdmin(ctx) {
         h("button", { type: "submit", class: "btn btn-sm", disabled: !can }, "Add role")));
   }
   const ruleUses = (d, role) => d.rules.some(r => r.responsible === role || r.accountable === role) || d.fallback.includes(role);
-  const roleNames = (d) => [...Object.keys(ACCOUNTABILITY.projectRoles), ...d.namedRoles];
+  const roleNames = (d) => [...Object.keys(ACCOUNTABILITY.projectRoles), ACCOUNTABILITY.tribeRole.role, ...d.namedRoles];
+
+  /* ---- tribe leads ---- */
+  function tribesCard(d, can) {
+    d.tribeLeads = d.tribeLeads || {};
+    // Every tribe ANDON offers (in the browser ANDON reads as you), and any saved before.
+    const andonTribes = (ctx.optionsOf("andon") || {})[ACCOUNTABILITY.tribeRole.field] || [];
+    const tribes = [...new Set([...andonTribes, ...Object.keys(d.tribeLeads)])];
+    for (const t of tribes) if (!d.tribeLeads[t]) d.tribeLeads[t] = [];
+    return h("section", { class: "card set-card" },
+      h("h2", null, "Tribe leads"),
+      h("p", { class: "set-sub" }, "A project's Tribe Lead is the lead of its ANDON TRIBE. While a project has no tribe yet, it's every Tribe Lead: they decide at the Win meeting which tribe takes it and who its PM is."),
+      tribes.length
+        ? h("ul", { class: "adm-roles" }, tribes.map(t => h("li", null,
+            h("div", { class: "adm-role-head" }, h("b", null, t)),
+            peoplePicker(d.tribeLeads[t], can, `Who leads ${t}?`))))
+        : h("p", { class: "set-help" }, "ANDON couldn't be read, so its tribes aren't known here. Check your access to ANDON, then Refresh."));
+  }
 
   /* People chips with a box to add one (any name the tables have). */
   function peoplePicker(list, can, placeholder) {

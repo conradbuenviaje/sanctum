@@ -79,8 +79,12 @@ Archived projects. Notes:
 - A blank or unknown Status counts as the first stage.
 
 **Who.** Every rule has a Responsible and an Accountable role. BD and AM come from the
-project's Universe row, PM from its ANDON row's PM (LEAD). Universe Keeper, Ops Lead and
-Finance (and any role added on the Admin page) are the same people for every project. When a
+project's Universe row, PM from its ANDON row's PM (LEAD). The **Tribe Lead** is the lead of
+the project's ANDON TRIBE (set per tribe on the Admin page); while a project has no tribe yet
+it's every Tribe Lead, who decide at the Win meeting which tribe takes it. Universe Keeper, Ops
+Lead, Finance, Account Director and Project Director (and any role added on the Admin page)
+are the same people for every project. A blank AM is the Account Director's to assign; a blank
+PM (LEAD) or TRIBE is the Tribe Lead's, accountable to the Project Director. When a
 role has nobody in it, the blank goes to the first of the fallback roles that has someone
 (AM, then BD, then Ops Lead); with nobody there either, it's listed under *Nobody (unassigned)*.
 
