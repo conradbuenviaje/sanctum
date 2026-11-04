@@ -248,9 +248,33 @@ export function createAdmin(ctx) {
       onblur: () => setTimeout(() => { matches = []; paint(); }, 120),
     });
     return h("div", { class: "picker" }, h("div", { class: "picker-box" },
-      list.map(p => h("span", { class: "chip", title: p.email || null }, p.name,
+      list.map(p => h("span", { class: `chip${p.id ? "" : " is-email"}`, title: p.id ? p.email || null : `${p.email}: added by email. Sanctum knows them by this name until they show up in the tables, so it should match their Lark name.` },
+        p.name,
+        // Added by email (no Lark id): the name is how Sanctum recognises them when they log in.
+        can && !p.id ? h("button", { type: "button", "aria-label": `Set ${p.email}'s name as in Lark`, title: "Set their name as it is in Lark",
+          onclick: () => renamePerson(p) }, ic("pencil")) : null,
         can ? h("button", { type: "button", "aria-label": `Remove ${p.name}`, onclick: () => { list.splice(list.indexOf(p), 1); changed(); } }, ic("x")) : null)),
       input), sug);
+  }
+
+  /* Someone added by email: set their name as Lark spells it (it's what their login is matched by). */
+  async function renamePerson(p) {
+    const field = h("input", { type: "text", id: "personName", value: p.name, maxlength: "80" });
+    const ok = await confirmSheet({
+      title: "Their name in Lark", icon: "pencil", confirm: "Set name", busyText: "Setting…",
+      sub: p.email,
+      body: h("div", { class: "field" }, h("label", { class: "field-label", for: "personName" }, "Name, as it shows in Lark"), field,
+        h("p", { class: "set-help" }, "Lark doesn't tell Sanctum a person's email when they log in, only their name, so this is how Sanctum knows it's them. Save changes afterwards.")),
+      run: async () => {
+        const name = field.value.replace(/\s+/g, " ").trim();
+        if (name.split(" ").length < 2) throw new Error("Type their full name (at least a first and last name).");
+        // The same person may be in several roles: rename them everywhere in the draft.
+        for (const list of [...Object.values(D.draft.roles), ...Object.values(D.draft.tribeLeads || {}), D.draft.admins]) {
+          for (const x of list) if (!x.id && x.email && x.email.toLowerCase() === p.email.toLowerCase()) x.name = name;
+        }
+      },
+    });
+    if (ok) changed();
   }
 
   /* ---- rules ---- */

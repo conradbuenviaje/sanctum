@@ -21,7 +21,7 @@ import { createCollections } from "./collections.js";
 import { createAndon } from "./andon.js";
 import { createSources, SOURCE_KINDS } from "./sources.js";
 import { createQueue } from "./queue.js";
-import { configFrom, accountabilityItems, dismissalsFrom, isAdmin } from "./accountability.js";
+import { configFrom, accountabilityItems, dismissalsFrom, isAdmin, isEditor } from "./accountability.js";
 import { createBoard } from "./board.js";
 import { createAdmin } from "./admin.js";
 
@@ -187,13 +187,14 @@ const sources = createSources(ctx);
 const queue = ctx.queue = createQueue(ctx, inbox);   // Push hands its write to the queue
 // The board's fields open the row editor; for people who may only look, the row read-only.
 ctx.openRow = (table, id) => (isViewer() ? inbox.viewRecord(table, id) : inbox.openRecord(table, id));
-/* Admins see everything; everyone else is a viewer: the Accountability board only, read-only.
-   Unknown (null) until both the rules and the person's name are in. */
+/* Admins see everything. Editors (tagged in a role or as a tribe lead) see everything but
+   the Admin page. Everyone else is a viewer: the Open Items board only, read-only.
+   Unknown (null) until both the rules and who's logged in are in. */
 function access() {
   if (!S.acc || !S.userLoaded) return null;
-  return isAdmin(S.acc.cfg, S.user) ? "admin" : "viewer";
+  return isAdmin(S.acc.cfg, S.user) ? "admin" : isEditor(S.acc.cfg, S.user) ? "editor" : "viewer";
 }
-const isViewer = () => access() !== "admin";
+const isViewer = () => !["admin", "editor"].includes(access());
 ctx.isViewer = isViewer;
 const board = createBoard(ctx);
 const admin = createAdmin(ctx);
@@ -261,13 +262,14 @@ function onRoute() {
 /* ======================= rendering ======================= */
 const TAB_TITLES = { brief: "Briefs", par: "PARs", invoice: "Invoices", andon: "ANDON", audit: "Audit" };
 function pageTitle() {
-  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Accountability", admin: "Admin" }[S.view] || TAB_TITLES[S.tab];
+  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Open Items", admin: "Admin" }[S.view] || TAB_TITLES[S.tab];
   return `${name} · ${APP.name}`;
 }
 
 function render() {
-  // A viewer who lands on Data Audit, the Queue or the Admin page goes to the board.
-  if (access() === "viewer" && ["work", "queue", "admin"].includes(S.view)) {
+  // A viewer who lands on Data Audit, the Queue or the Admin page goes to the board; an editor, from the Admin page.
+  const who = access();
+  if ((who === "viewer" && ["work", "queue", "admin"].includes(S.view)) || (who === "editor" && S.view === "admin")) {
     location.hash = "#/accountability";
     return;
   }
@@ -324,9 +326,9 @@ function renderHeader() {
   $("#overrideBadge").title = over.length ? `Overridden in this browser. ${over.join(". ")}` : "";
   $("#sessionPill").hidden = !signedIn;
   $("#meLink").hidden = !signedIn;
-  // Data Audit and Admin are for admins only (hidden until that's known, so they never flash).
-  const admin = access() === "admin";
-  $("#workLink").hidden = !signedIn || !admin;
+  // Data Audit is for admins and editors, Admin for admins only (hidden until that's known, so they never flash).
+  const admin = access() === "admin", editor = admin || access() === "editor";
+  $("#workLink").hidden = !signedIn || !editor;
   $("#boardLink").hidden = !signedIn;
   $("#adminLink").hidden = !signedIn || !admin;
   for (const a of $$(".nav a")) {
@@ -675,7 +677,7 @@ function renderTags() {
   const box = $("#tagsBox");
   const note = (text, cls = "set-sub") => box.replaceChildren(h("p", { class: cls }, text));
   if (!auth.currentToken()) return note("Log in to see and change the custom tags.");
-  if (access() === "viewer") return note("Only admins can change the custom tags.");
+  if (access() !== "admin") return note("Only admins can change the custom tags.");
   if (!S.data) return note(S.loading ? "Loading…" : S.loadError ? describe(S.loadError) : "Not loaded yet.");
   if (!tables.variables) return note("There's no Variables table in js/config.js (TABLES.variables).");
   if (!S.data.variables) {

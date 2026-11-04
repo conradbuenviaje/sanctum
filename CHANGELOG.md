@@ -9,6 +9,19 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.5.0 · Nov 4, 2026
+
+- **The board is now called Open Items** (the tab, the page and the daily digest's heading).
+  Its address stays `#/accountability`, so old links still work.
+- **Everyone tagged in a role or as a tribe lead can edit.** Besides the admins, the people on
+  the Admin page's Roles (Finance, Account Director…) and Tribe leads can fill blanks, dismiss
+  and restore them, and use Data Audit. Only admins see the Admin page. Everyone else views.
+- **Sanctum knows who you are by your Lark id** (new logins), not just your name, so two people
+  with the same name can't be mixed up.
+- **People added by email** show dashed on the Admin page, with a pencil to set their name as
+  it is in Lark: Lark doesn't tell Sanctum a person's email when they log in, so their name is
+  how Sanctum recognises them until they appear in the tables.
+
 ## 2.4.0 · Nov 4, 2026
 
 - **Everyone who isn't an admin is a viewer.** They see only the Accountability board, marked

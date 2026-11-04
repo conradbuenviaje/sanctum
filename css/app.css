@@ -472,3 +472,5 @@ main { padding-bottom: 120px; }
 /* A viewer's blank: it only opens the row to look, so it has no dismiss button. */
 .acc-chip.is-view .acc-field { border-radius: var(--r-pill); border-right-width: 1px; }
 #boardTitle .badge { vertical-align: middle; font-size: 12px; }
+/* Someone added by email (no Lark id yet): dashed, with a pencil to set their Lark name. */
+.chip.is-email { background: transparent; border: 1px dashed var(--brand-strong); }
