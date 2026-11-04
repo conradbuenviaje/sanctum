@@ -9,6 +9,13 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.2.1 · Nov 4, 2026
+
+- **"NO TRIBE ASSIGNED" counts as no tribe.** A project whose ANDON TRIBE says NO TRIBE
+  ASSIGNED is now asked for a real one, and every Tribe Lead is on it (as with a blank). It's
+  no longer listed under Tribe leads on the Admin page. The values are `blankValues` in
+  `js/config.js`.
+
 ## 2.2.0 · Nov 4, 2026
 
 - **Who's on a missing AM, PM or tribe** now follows how the team works:

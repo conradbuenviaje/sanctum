@@ -63,7 +63,7 @@ export function configFrom(defaults, records, cols) {
     skipTags: Array.isArray(setting.skipTags) ? setting.skipTags.map(clean).filter(Boolean) : [...defaults.skipTags],
     fallback: Array.isArray(setting.fallback) ? setting.fallback.map(clean).filter(Boolean) : [...defaults.fallback],
     pipeline: defaults.pipeline, lostStatuses: defaults.lostStatuses, phaseStages: defaults.phaseStages,
-    projectRoles: defaults.projectRoles, tribeRole: defaults.tribeRole,
+    projectRoles: defaults.projectRoles, tribeRole: defaults.tribeRole, blankValues: defaults.blankValues || {},
     namedRoles: Object.keys(roles),
     rules, roles, tribeLeads, people: peopleMap,
     admins: rows.admin.map(x => normPeople([x.value])[0]).filter(Boolean),
@@ -175,6 +175,14 @@ export function samePerson(p, user) {
   return theirs.length >= 2 && theirs.every(w => mine.has(w));
 }
 
+/* Is this cell blank for the accountability rules? Empty, or a value that means "nothing
+   chosen yet" for its column (cfg.blankValues: TRIBE "NO TRIBE ASSIGNED"). */
+export function isBlankFor(field, v, cfg) {
+  if (isBlank(v)) return true;
+  const placeholders = ((cfg && cfg.blankValues) || {})[field];
+  return !!placeholders && placeholders.some(p => p.toLowerCase() === clean(v).toLowerCase());
+}
+
 /* ======================= dismissed blanks ======================= */
 
 /* Blanks someone dismissed on the board, with a reason: Variables rows whose Variable
@@ -254,7 +262,8 @@ export function holders(role, rows, cfg) {
   const tr = cfg.tribeRole;
   if (tr && role === tr.role) {
     const rec = rows[tr.table];
-    const tribe = rec ? clean((rec.fields || {})[tr.field]) : "";
+    const raw = rec ? (rec.fields || {})[tr.field] : null;
+    const tribe = isBlankFor(tr.field, raw, cfg) ? "" : clean(raw);
     const leads = cfg.tribeLeads || {};
     const key = Object.keys(leads).find(t => t.toLowerCase() === tribe.toLowerCase());
     // No tribe yet (or one with no lead set): every Tribe Lead, who decide together.
@@ -347,7 +356,7 @@ export function accountabilityItems(data, cfg, { fields = {}, read = {}, tagFiel
     if (!code) skipped.noCode++;
     for (const rule of rules) {
       if (!applies(rule, stage, cfg)) continue;
-      const hit = blankFor(rule, { u, andonRows, collRows, code, forCollection });
+      const hit = blankFor(rule, { u, andonRows, collRows, code, forCollection, cfg });
       if (!hit) continue;
       const item = {
         key: `${u.record_id}|${rule.table}|${rule.field}`, ruleId: rule.id, projectId: u.record_id, code,
@@ -371,7 +380,8 @@ export function accountabilityItems(data, cfg, { fields = {}, read = {}, tagFiel
    (to fill it), or null when it's filled. A field in ANDON or Collections when the
    project has no row there counts as filled: the "@row" rule asks for the row once,
    instead of every one of its columns asking. */
-function blankFor(rule, { u, andonRows, collRows, code, forCollection }) {
+function blankFor(rule, { u, andonRows, collRows, code, forCollection, cfg }) {
+  const isBlank = (v) => isBlankFor(rule.field, v, cfg);
   if (rule.table === "universe") {
     if (rule.field === ROW) return null;
     return isBlank((u.fields || {})[rule.field]) ? { table: "universe", rowId: u.record_id } : null;

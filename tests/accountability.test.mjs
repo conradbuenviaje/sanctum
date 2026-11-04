@@ -6,7 +6,7 @@ import { ACCOUNTABILITY, RULES } from "../js/config.js";
 import {
   configFrom, configValues, configWrites, isAdmin, samePerson, inScope, stageOf, applies, resolve, accountabilityItems,
   byPerson, byProject, fieldCounts, itemMatches, nextState, digestMessages, pack, telegramHandle, UNASSIGNED, ROW,
-  dismissalsFrom, dismissalValue, rulesBehindDefaults,
+  dismissalsFrom, dismissalValue, rulesBehindDefaults, isBlankFor,
 } from "../js/accountability.js";
 
 const user = (id, name) => ({ id, name, en_name: name, email: `${id}@x.com` });
@@ -307,4 +307,19 @@ test("saved rules behind the starting rules are found by id, and only for who's 
   assert.deepEqual(behind.map(b => b.id), ["am"]);
   assert.deepEqual(behind[0].to, { responsible: "Account Director", accountable: "Account Director" });
   assert.deepEqual(rulesBehindDefaults(ACCOUNTABILITY.rules, ACCOUNTABILITY.rules), []);
+});
+
+test("TRIBE \"NO TRIBE ASSIGNED\" counts as no tribe: it's asked for, and every Tribe Lead is on it", () => {
+  const cfg = defaults();
+  assert.equal(isBlankFor("TRIBE", "NO TRIBE ASSIGNED", cfg), true);
+  assert.equal(isBlankFor("TRIBE", "no tribe assigned ", cfg), true);
+  assert.equal(isBlankFor("TRIBE", "TRIBE A - Moonton", cfg), false);
+  assert.equal(isBlankFor("Client", "NO TRIBE ASSIGNED", cfg), false);    // only for its own column
+  const d = fixture();
+  d.andon[0].fields.TRIBE = "NO TRIBE ASSIGNED";                          // 2025TEG-P0002's ANDON row
+  const res = accountabilityItems(d, cfg, {});
+  const tribe = res.items.find(it => it.code === "2025TEG-P0002" && it.field === "TRIBE");
+  assert.ok(tribe, "a placeholder tribe is a blank");
+  cfg.tribeLeads = { "TRIBE A - Moonton": [{ id: "ou_a", name: "Ada Lead", email: "" }], "TRIBE B - Tencent": [{ id: "ou_b", name: "Bea Lead", email: "" }] };
+  assert.deepEqual(resolve("Tribe Lead", { universe: d.universe[1], andon: d.andon[0] }, cfg).people.map(p => p.name), ["Ada Lead", "Bea Lead"]);
 });

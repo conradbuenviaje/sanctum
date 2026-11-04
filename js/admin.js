@@ -116,7 +116,8 @@ export function createAdmin(ctx) {
     d.tribeLeads = d.tribeLeads || {};
     // Every tribe ANDON offers (in the browser ANDON reads as you), and any saved before.
     const andonTribes = (ctx.optionsOf("andon") || {})[ACCOUNTABILITY.tribeRole.field] || [];
-    const tribes = [...new Set([...andonTribes, ...Object.keys(d.tribeLeads)])];
+    const notATribe = (t) => (ACCOUNTABILITY.blankValues[ACCOUNTABILITY.tribeRole.field] || []).some(p => p.toLowerCase() === t.toLowerCase());
+    const tribes = [...new Set([...andonTribes, ...Object.keys(d.tribeLeads)])].filter(t => !notATribe(t));
     for (const t of tribes) if (!d.tribeLeads[t]) d.tribeLeads[t] = [];
     return h("section", { class: "card set-card" },
       h("h2", null, "Tribe leads"),
