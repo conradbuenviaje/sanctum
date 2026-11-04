@@ -9,6 +9,19 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.2.0 · Nov 4, 2026
+
+- **Who's on a missing AM, PM or tribe** now follows how the team works:
+  - A blank **AM**: the **Account Director** is responsible and accountable for assigning one.
+  - A blank **PM (LEAD)** or **TRIBE**: the project's **Tribe Lead** is responsible and the
+    **Project Director** is accountable. While a project has no tribe yet, every Tribe Lead
+    is listed, since they decide together at the Win meeting which tribe takes it.
+- **Admin page:** new **Tribe leads** section, one per ANDON tribe (the Project Director can
+  lead the Marketing tribe too), and the Account Director and Project Director roles.
+- **Admin page:** saved rules that name different people than the starting rules (like the AM,
+  PM and TRIBE rules saved before this version) are listed above the rules, with **Update**
+  to bring just those up to date. Other rules are left as they are.
+
 ## 2.1.0 · Nov 3, 2026
 
 - **Dismiss a blank, with a reason.** Each blank on the Accountability board has a **×**:

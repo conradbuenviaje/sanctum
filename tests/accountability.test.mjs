@@ -6,7 +6,7 @@ import { ACCOUNTABILITY, RULES } from "../js/config.js";
 import {
   configFrom, configValues, configWrites, isAdmin, samePerson, inScope, stageOf, applies, resolve, accountabilityItems,
   byPerson, byProject, fieldCounts, itemMatches, nextState, digestMessages, pack, telegramHandle, UNASSIGNED, ROW,
-  dismissalsFrom, dismissalValue,
+  dismissalsFrom, dismissalValue, rulesBehindDefaults,
 } from "../js/accountability.js";
 
 const user = (id, name) => ({ id, name, en_name: name, email: `${id}@x.com` });
@@ -21,8 +21,8 @@ test("the defaults are used until the Admin page saves something", () => {
   const cfg = defaults();
   assert.equal(cfg.since, "2025-01-01");
   assert.equal(cfg.rules.length, ACCOUNTABILITY.rules.length);
-  assert.deepEqual(cfg.namedRoles, ["Universe Keeper", "Ops Lead", "Finance"]);
-  assert.deepEqual(cfg.saved, { rule: false, role: false, person: false, setting: false, admin: false });
+  assert.deepEqual(cfg.namedRoles, ["Universe Keeper", "Ops Lead", "Finance", "Account Director", "Project Director"]);
+  assert.deepEqual(cfg.saved, { rule: false, role: false, person: false, setting: false, admin: false, tribe: false });
   assert.ok(cfg.rules.every(r => r.on && r.responsible && r.accountable));
 });
 
@@ -68,7 +68,7 @@ test("saving writes only what changed", () => {
   assert.deepEqual(w.remove.sort(), ["v3", "v4"]);
   // Every default rule and the other two named roles are new rows.
   assert.equal(w.create.filter(c => c.kind === "rule").length, ACCOUNTABILITY.rules.length);
-  assert.equal(w.create.filter(c => c.kind === "role").length, 2);
+  assert.equal(w.create.filter(c => c.kind === "role").length, 4);
   // Saved again, nothing changes.
   const after = configFrom(ACCOUNTABILITY, [
     ...configValues(cfg).map((v, i) => rec(`n${i}`, { Variable: ACCOUNTABILITY.variables[v.kind], Value: v.value })),
@@ -274,4 +274,37 @@ test("dismissing a blank needs a reason; it leaves the lists and the digest but 
   assert.deepEqual(configWrites(saved.rows, configValues(saved)).remove, []);
   const text = digestMessages(res.items, cfg, { state: nextState(res.items, null, 1), dismissedCount: 1 }).join("\n");
   assert.match(text, /1 dismissed with a reason/);
+});
+
+test("AM goes to the Account Director; PM and TRIBE to the project's Tribe Lead, accountable to the Project Director", () => {
+  const cfg = defaults();
+  const rule = (id) => cfg.rules.find(r => r.id === id);
+  assert.deepEqual([rule("am").responsible, rule("am").accountable], ["Account Director", "Account Director"]);
+  assert.deepEqual([rule("pm").responsible, rule("pm").accountable], ["Tribe Lead", "Project Director"]);
+  assert.deepEqual([rule("tribe").responsible, rule("tribe").accountable], ["Tribe Lead", "Project Director"]);
+  cfg.tribeLeads = { Alpha: [{ id: "ou_ta", name: "Tala Alpha", email: "" }], Marketing: [{ id: "ou_pd", name: "Paz Director", email: "" }] };
+  cfg.roles["Project Director"] = [{ id: "ou_pd", name: "Paz Director", email: "" }];
+  const u = rec("u1", {});
+  // A project in the Alpha tribe: its lead.
+  assert.deepEqual(resolve("Tribe Lead", { universe: u, andon: rec("a1", { TRIBE: "alpha" }) }, cfg).people.map(p => p.name), ["Tala Alpha"]);
+  // No tribe yet: every Tribe Lead decides (each once).
+  assert.deepEqual(resolve("Tribe Lead", { universe: u, andon: rec("a2", { TRIBE: "" }) }, cfg).people.map(p => p.name), ["Tala Alpha", "Paz Director"]);
+  assert.deepEqual(resolve("Tribe Lead", { universe: u, andon: null }, cfg).people.map(p => p.name), ["Tala Alpha", "Paz Director"]);
+  // A tribe with no lead set: every Tribe Lead too.
+  assert.equal(resolve("Tribe Lead", { universe: u, andon: rec("a3", { TRIBE: "Bravo" }) }, cfg).people.length, 2);
+  // Tribe leads are saved and read back.
+  const back = configFrom(ACCOUNTABILITY, configValues(cfg).map((v, i) => rec(`n${i}`, { Variable: ACCOUNTABILITY.variables[v.kind], Value: v.value })), cols);
+  assert.deepEqual(Object.keys(back.tribeLeads).sort(), ["Alpha", "Marketing"]);
+  assert.equal(back.tribeLeads.Marketing[0].name, "Paz Director");
+});
+
+test("saved rules behind the starting rules are found by id, and only for who's on them", () => {
+  const saved = ACCOUNTABILITY.rules.map(r => ({ ...r }));
+  Object.assign(saved.find(r => r.id === "am"), { responsible: "Universe Keeper", accountable: "BD" });
+  Object.assign(saved.find(r => r.id === "pm"), { from: "For Pitching" });                 // a stage change isn't flagged
+  saved.push({ id: "custom", table: "universe", field: "Client", responsible: "AM", accountable: "AM" });   // no starting rule: left alone
+  const behind = rulesBehindDefaults(saved, ACCOUNTABILITY.rules);
+  assert.deepEqual(behind.map(b => b.id), ["am"]);
+  assert.deepEqual(behind[0].to, { responsible: "Account Director", accountable: "Account Director" });
+  assert.deepEqual(rulesBehindDefaults(ACCOUNTABILITY.rules, ACCOUNTABILITY.rules), []);
 });

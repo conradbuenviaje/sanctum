@@ -25,7 +25,7 @@ const numOf = (v) => num(v) ?? (v && typeof v === "object" && Array.isArray(v.va
              saved: {kind: bool}, rows: {kind: [{id, key}]}, problems: [string] }. */
 export function configFrom(defaults, records, cols) {
   const names = defaults.variables;
-  const rows = { rule: [], role: [], person: [], setting: [], admin: [] };
+  const rows = { rule: [], role: [], person: [], setting: [], admin: [], tribe: [] };
   const problems = [];
   if (cols) {
     for (const r of records || []) {
@@ -47,6 +47,12 @@ export function configFrom(defaults, records, cols) {
     const name = clean(x.value.role);
     if (name) roles[name] = normPeople(x.value.people);
   }
+  // Each tribe's lead(s), by the tribe's name as ANDON's TRIBE spells it.
+  const tribeLeads = {};
+  for (const x of rows.tribe) {
+    const name = clean(x.value.tribe);
+    if (name) tribeLeads[name] = normPeople(x.value.people);
+  }
   const peopleMap = {};
   for (const x of rows.person) {
     const id = clean(x.value.id);
@@ -57,9 +63,9 @@ export function configFrom(defaults, records, cols) {
     skipTags: Array.isArray(setting.skipTags) ? setting.skipTags.map(clean).filter(Boolean) : [...defaults.skipTags],
     fallback: Array.isArray(setting.fallback) ? setting.fallback.map(clean).filter(Boolean) : [...defaults.fallback],
     pipeline: defaults.pipeline, lostStatuses: defaults.lostStatuses, phaseStages: defaults.phaseStages,
-    projectRoles: defaults.projectRoles,
+    projectRoles: defaults.projectRoles, tribeRole: defaults.tribeRole,
     namedRoles: Object.keys(roles),
-    rules, roles, people: peopleMap,
+    rules, roles, tribeLeads, people: peopleMap,
     admins: rows.admin.map(x => normPeople([x.value])[0]).filter(Boolean),
     saved: Object.fromEntries(Object.keys(rows).map(k => [k, rows[k].length > 0])),
     rows: Object.fromEntries(Object.entries(rows).map(([k, list]) => [k, list.map(x => ({ id: x.id, key: rowKey(k, x.value), text: x.text }))])),
@@ -89,6 +95,7 @@ export function telegramHandle(v) {
 function rowKey(kind, v) {
   if (kind === "rule") return `rule:${clean(v.id) || `${v.table}:${clean(v.field)}`}`;
   if (kind === "role") return `role:${clean(v.role).toLowerCase()}`;
+  if (kind === "tribe") return `tribe:${clean(v.tribe).toLowerCase()}`;
   if (kind === "person" || kind === "admin") return `${kind}:${clean(v.id) || clean(v.email) || clean(v.name)}`;
   return "setting";
 }
@@ -102,6 +109,9 @@ export function configValues(cfg) {
   for (const r of cfg.rules) add("rule", { id: r.id, table: r.table, field: r.field, from: r.from, lost: r.lost,
                                            responsible: r.responsible, accountable: r.accountable, on: r.on });
   for (const name of cfg.namedRoles) add("role", { role: name, people: (cfg.roles[name] || []).map(p => ({ id: p.id, name: p.name, email: p.email })) });
+  for (const [tribe, list] of Object.entries(cfg.tribeLeads || {})) {
+    if (list.length) add("tribe", { tribe, people: list.map(p => ({ id: p.id, name: p.name, email: p.email })) });
+  }
   for (const p of Object.values(cfg.people)) if (p.telegram) add("person", { id: p.id, name: p.name, telegram: p.telegram });
   for (const a of cfg.admins) add("admin", { id: a.id, name: a.name, email: a.email });
   return out;
@@ -130,6 +140,19 @@ export function configWrites(existing, wanted) {
   }
   for (const [key, row] of have) if (!used.has(key)) remove.push(row.id);
   return { create, update, remove };
+}
+
+/* Saved rules whose Responsible or Accountable differ from the starting rule with the
+   same id (the starting rules changed since they were saved, or an admin changed them):
+   [{ id, field, from: {responsible, accountable}, to: {responsible, accountable} }]. */
+export function rulesBehindDefaults(rules, defaults) {
+  const byId = new Map(defaults.map(r => [r.id, r]));
+  return rules.flatMap(r => {
+    const d = byId.get(r.id);
+    if (!d || (d.responsible === r.responsible && d.accountable === r.accountable)) return [];
+    return [{ id: r.id, field: r.field, from: { responsible: r.responsible, accountable: r.accountable },
+              to: { responsible: d.responsible, accountable: d.accountable } }];
+  });
 }
 
 /* Is this person (the signed-in user: {name, email}) an admin? With no admins saved
@@ -224,9 +247,22 @@ export function applies(rule, stage, cfg) {
 /* ======================= who ======================= */
 
 /* The people holding a role on a project: a project role from the project's rows
-   (BD and AM on its Universe row, PM on its ANDON row), else a named role
-   (cfg.roles). `rows` = { universe, andon } records for the project (or null). */
+   (BD and AM on its Universe row, PM on its ANDON row), the Tribe Lead of its ANDON
+   TRIBE (every Tribe Lead while it has none), else a named role (cfg.roles).
+   `rows` = { universe, andon } records for the project (or null). */
 export function holders(role, rows, cfg) {
+  const tr = cfg.tribeRole;
+  if (tr && role === tr.role) {
+    const rec = rows[tr.table];
+    const tribe = rec ? clean((rec.fields || {})[tr.field]) : "";
+    const leads = cfg.tribeLeads || {};
+    const key = Object.keys(leads).find(t => t.toLowerCase() === tribe.toLowerCase());
+    // No tribe yet (or one with no lead set): every Tribe Lead, who decide together.
+    const list = key && leads[key].length ? leads[key] : Object.values(leads).flat();
+    const seen = new Set();
+    return list.map(p => ({ ...p, id: p.id || p.email || p.name, short: p.name }))
+      .filter(p => !seen.has(p.id) && seen.add(p.id));
+  }
   const src = cfg.projectRoles[role];
   if (src) {
     const rec = rows[src.table];
