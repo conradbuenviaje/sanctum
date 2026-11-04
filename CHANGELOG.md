@@ -9,6 +9,13 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 1.10.4 · Nov 4, 2026
+
+- **Changed:** switching the table beside the list (Universe, Collections, ANDON, the
+  Lark Approval tables) keeps what's typed in its search.
+- **Fixed:** picking someone in a people picker (PM, BD) closes its list, so it no
+  longer covers the button below. Click the box to open it again.
+
 ## 1.10.3 · Nov 3, 2026
 
 - **Changed:** when an invoice request is filed and its project's For Invoicing row

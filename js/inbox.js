@@ -1570,7 +1570,8 @@ export function createInbox(ctx) {
     const add = (p) => {
       if (single) chosen.length = 0;
       if (!chosen.some(x => x.id === p.id)) chosen.push({ id: p.id, name: p.name, email: p.email });
-      input.value = ""; paintChips(); onChange([...chosen]); show();
+      // Picked: the list closes (it would cover the button below) until the box is clicked again.
+      input.value = ""; paintChips(); onChange([...chosen]); close();
     };
     const show = () => {
       const q = input.value.trim().toLowerCase();

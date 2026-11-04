@@ -197,9 +197,12 @@ const sidePick = {};   // tab → table
 const sideOf = (tab) => sidePick[tab] || sideDefault(tab);
 // Which pane shows a table: a source table shares the one "source" pane.
 const paneOf = (side) => (SOURCE_KINDS.includes(side) ? "source" : side);
+// Each pane has its own search box; switching tables carries what's typed across.
+const PANE_SEARCH = { universe: "#uniSearch", collections: "#colSearch", andon: "#andonSearch", source: "#srcSearch" };
 for (const btn of $$(".pane-switch")) {
   btn.addEventListener("click", () => {
     const now = sideOf(S.tab), mine = sideDefault(S.tab);
+    const typed = $(PANE_SEARCH[paneOf(now)]).value;
     const items = SIDES.filter(s => s === "-" || tables[s[0]]).map(s => (s === "-" ? s : {
       label: s[0] === mine && s[0] !== now ? `${s[1]} (this tab's)` : s[1],
       icon: s[0] === now ? "check" : s[2],
@@ -207,6 +210,8 @@ for (const btn of $$(".pane-switch")) {
         if (s[0] === now) return;
         if (s[0] === mine) delete sidePick[S.tab]; else sidePick[S.tab] = s[0];
         render();
+        const box = $(PANE_SEARCH[paneOf(s[0])]);
+        if (box.value !== typed) { box.value = typed; box.dispatchEvent(new Event("input")); }
         const next = $(`.pane-universe[data-pane="${paneOf(s[0])}"] .pane-switch`);
         if (next) next.focus();   // the keyboard stays on the switcher, now in the new pane
       },
