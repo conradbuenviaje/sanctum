@@ -22,16 +22,16 @@ test("the defaults are used until the Admin page saves something", () => {
   const cfg = defaults();
   assert.equal(cfg.since, "2025-01-01");
   assert.equal(cfg.rules.length, ACCOUNTABILITY.rules.length);
-  assert.deepEqual(cfg.namedRoles, ["Universe Keeper", "Head of Operations", "Finance", "Account Director", "Project Director"]);
+  assert.deepEqual(cfg.namedRoles, ["Universe Keeper", "Ops Lead", "Finance", "Account Director", "Project Director"]);
   assert.deepEqual(cfg.saved, { rule: false, role: false, person: false, setting: false, admin: false, tribe: false });
   assert.ok(cfg.rules.every(r => r.on && r.responsible && r.accountable));
 });
 
 test("saved Variables rows win over the defaults, kind by kind", () => {
   const cfg = configFrom(ACCOUNTABILITY, [
-    variable("v1", "rule", { id: "pm", table: "andon", field: "PM (LEAD)", from: "For Pitching", lost: false, responsible: "AM", accountable: "Head of Operations" }),
-    variable("v2", "role", { role: "Head of Operations", people: [{ id: "ou_ops", name: "Olive Ops" }] }),
-    variable("v3", "setting", { since: "2026-01-01", skipTags: [], fallback: ["Head of Operations"] }),
+    variable("v1", "rule", { id: "pm", table: "andon", field: "PM (LEAD)", from: "For Pitching", lost: false, responsible: "AM", accountable: "Ops Lead" }),
+    variable("v2", "role", { role: "Ops Lead", people: [{ id: "ou_ops", name: "Olive Ops" }] }),
+    variable("v3", "setting", { since: "2026-01-01", skipTags: [], fallback: ["Ops Lead"] }),
     variable("v4", "person", { id: "ou_am", name: "Ana AM", telegram: "@ana_am" }),
     rec("v5", { Variable: "accountability_rule", Value: "{not json" }),
     rec("v6", { Variable: "custom_tag", Value: "No Revenue" }),
@@ -40,7 +40,7 @@ test("saved Variables rows win over the defaults, kind by kind", () => {
   assert.equal(cfg.rules[0].from, "For Pitching");
   assert.equal(cfg.since, "2026-01-01");
   assert.deepEqual(cfg.skipTags, []);
-  assert.deepEqual(cfg.roles["Head of Operations"].map(p => p.name), ["Olive Ops"]);
+  assert.deepEqual(cfg.roles["Ops Lead"].map(p => p.name), ["Olive Ops"]);
   assert.deepEqual(cfg.roles["Finance"], []);            // a default named role with nobody yet
   assert.equal(cfg.people.ou_am.telegram, "ana_am");
   assert.equal(cfg.problems.length, 1);
@@ -56,13 +56,13 @@ test("Telegram handles are cleaned up", () => {
 
 test("saving writes only what changed", () => {
   const records = [
-    variable("v1", "setting", { since: "2025-01-01", skipTags: ["Hidden"], fallback: ["AM", "BD", "Head of Operations"], exclude: {} }),
-    variable("v2", "role", { role: "Head of Operations", people: [] }),
-    variable("v3", "role", { role: "Head of Operations", people: [] }),   // a duplicate: removed
+    variable("v1", "setting", { since: "2025-01-01", skipTags: ["Hidden"], fallback: ["AM", "BD", "Ops Lead"], exclude: {} }),
+    variable("v2", "role", { role: "Ops Lead", people: [] }),
+    variable("v3", "role", { role: "Ops Lead", people: [] }),   // a duplicate: removed
     variable("v4", "admin", { id: "ou_x", name: "Old Admin", email: "" }),
   ];
   const cfg = configFrom(ACCOUNTABILITY, records, cols);
-  cfg.roles["Head of Operations"] = [{ id: "ou_ops", name: "Olive Ops", email: "" }];
+  cfg.roles["Ops Lead"] = [{ id: "ou_ops", name: "Olive Ops", email: "" }];
   cfg.admins = [];
   const w = configWrites(cfg.rows, configValues(cfg));
   assert.deepEqual(w.update.map(u => u.id), ["v2"]);
@@ -129,8 +129,8 @@ test("who: the role's holder, else the fallback, else unassigned", () => {
   assert.deepEqual(am.people.map(p => p.name), ["Ben BD"]);
   const keeper = resolve("Universe Keeper", { universe: rec("u2", {}), andon: null }, cfg);
   assert.equal(keeper.unassigned, true);
-  cfg.roles["Head of Operations"] = [{ id: "ou_ops", name: "Olive Ops", email: "" }];
-  assert.equal(resolve("Universe Keeper", { universe: rec("u2", {}), andon: null }, cfg).via, "Head of Operations");
+  cfg.roles["Ops Lead"] = [{ id: "ou_ops", name: "Olive Ops", email: "" }];
+  assert.equal(resolve("Universe Keeper", { universe: rec("u2", {}), andon: null }, cfg).via, "Ops Lead");
 });
 
 /* A small Universe, ANDON and Collections: one project at each interesting stage. */
@@ -345,11 +345,7 @@ test("scope filters leave out projects by Status, Tribe and the rest, and list t
 
 test("renaming a role changes its people, the rules and the fallback; a taken name is refused", () => {
   const cfg = defaults();
-  cfg.namedRoles = cfg.namedRoles.map(r => (r === "Head of Operations" ? "Ops Lead" : r));
-  cfg.roles = { ...cfg.roles, "Ops Lead": [{ id: "ou_o", name: "Olive", email: "" }] };
-  delete cfg.roles["Head of Operations"];
-  cfg.fallback = ["AM", "BD", "Ops Lead"];
-  cfg.rules = cfg.rules.map(r => (r.id === "andon" ? { ...r, accountable: "Ops Lead" } : r));
+  cfg.roles["Ops Lead"] = [{ id: "ou_o", name: "Olive", email: "" }];
   const next = renameRole(cfg, "Ops Lead", "Head of Operations", ["BD", "AM", "PM", "Tribe Lead"]);
   assert.ok(next.namedRoles.includes("Head of Operations") && !next.namedRoles.includes("Ops Lead"));
   assert.deepEqual(next.roles["Head of Operations"].map(p => p.name), ["Olive"]);

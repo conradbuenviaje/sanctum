@@ -9,14 +9,20 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.3.1 · Nov 4, 2026
+
+- **The role stays "Ops Lead".** 2.3.0 renamed the starting role to Head of Operations, which
+  showed an empty Head of Operations beside the saved Ops Lead. The starting role is Ops Lead
+  again; any role can still be renamed with the pencil on the Admin page.
+
 ## 2.3.0 · Nov 4, 2026
 
 - **Tagging people works by name or email.** The Admin page's people boxes now search
   everyone in the tables by name *or* email as you type (arrow keys and Enter, or click), and
   offer **Add <email>** for someone who isn't in the tables yet. The box keeps the keyboard
   after adding, so you can add several in a row.
-- **Ops Lead is now Head of Operations.** Any role can be renamed on the Admin page (the
-  pencil beside it): its people, the rules naming it and the fallback order follow.
+- **Rename a role** on the Admin page (the pencil beside it): its people, the rules naming it
+  and the fallback order follow.
 - **Scope: leave projects out by Status, Mancom Phase, Business Unit, Tribe or Client.** Tap a
   value (for example Status: Archived) to stop checking every project that has it. The board
   says how many are left out.

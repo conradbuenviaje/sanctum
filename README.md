@@ -82,12 +82,11 @@ Archived projects. Notes:
 **Who.** Every rule has a Responsible and an Accountable role. BD and AM come from the
 project's Universe row, PM from its ANDON row's PM (LEAD). The **Tribe Lead** is the lead of
 the project's ANDON TRIBE (set per tribe on the Admin page); while a project has no tribe yet
-it's every Tribe Lead, who decide at the Win meeting which tribe takes it. Universe Keeper, Head of
-Operations, Finance, Account Director and Project Director (and any role added on the Admin page)
+it's every Tribe Lead, who decide at the Win meeting which tribe takes it. Universe Keeper, Ops Lead, Finance, Account Director and Project Director (and any role added on the Admin page)
 are the same people for every project. A blank AM is the Account Director's to assign; a blank
 PM (LEAD) or TRIBE is the Tribe Lead's, accountable to the Project Director. When a
 role has nobody in it, the blank goes to the first of the fallback roles that has someone
-(AM, then BD, then Head of Operations); with nobody there either, it's listed under *Nobody (unassigned)*.
+(AM, then BD, then Ops Lead); with nobody there either, it's listed under *Nobody (unassigned)*.
 
 **The board** (`#/accountability`, the home page) lists the blanks by person (what each is
 responsible for, and how many more they're accountable for), by role, or by project, with a chip per
