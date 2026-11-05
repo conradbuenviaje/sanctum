@@ -19,8 +19,8 @@
 <main>
   <h1>End-to-end check (test copy only)</h1>
   <p>Pushes one brief, one PAR and two Collections changes (a new row, and a row moved along), ignores and restores
-     one brief, then compares every stored field of all five tables before and after. Runs as the user logged in on
-     the main page in this tab.</p>
+     one brief, then compares every stored field of all five tables before and after. Runs as the user logged in to
+     Polaris (or any Mineski tool) in this browser.</p>
   <button id="run" type="button">Run the check</button>
   <button id="runAndon" type="button">Run the ANDON check</button>
   <pre id="out"></pre>
@@ -35,7 +35,7 @@
   const log = (line) => { out.textContent += line + "\n"; };
   const read = (area, key) => { try { return JSON.parse(window[area + "Storage"].getItem(key)); } catch { return null; } };
   const proxy = larkUrl();   // the hosted service, or the address saved in Settings > Advanced
-  const tok = read("session", "polaris.auth.token");
+  const tok = read("local", "mineski.auth.token");   // the login shared by the Mineski tools (js/session.js)
   const T = Object.fromEntries(Object.entries(TABLE_LINKS).map(([k, l]) => [k, parseBaseLink(l)]));
 
   async function call(method, url, body) {
@@ -50,7 +50,7 @@
   const btn = document.getElementById("run");
   if (!tok || !tok.access_token || tok.expires_at < Date.now() + 60000) {
     btn.disabled = true;
-    log("Not logged in (or the login is about to expire). Log in on ../ in this same tab, then come back.");
+    log("Not logged in (or the login is about to expire). Log in on ../ (any tab), then come back.");
   } else if (APP.env !== "test") {
     btn.disabled = true;
     log(`js/config.js has APP.env = "${APP.env}", not "test". This check only runs on the test copy.`);

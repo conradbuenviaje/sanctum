@@ -74,14 +74,13 @@ const S = {
 
 /* Every Lark call runs as the signed-in user. Reads retry while the proxy wakes;
    writes never do. While a write or upload is running (track), its calls may use
-   the token through Lark's last 30 s of grace, so the clock can't cut it off. */
-let inflight = 0;
+   the token through Lark's last 30 s of grace, so neither the clock nor another tab
+   logging out can cut it off. */
 async function track(work) {
-  inflight++;
-  try { return await work(); } finally { if (--inflight === 0) tickSession(); }
+  try { return await auth.track(work); } finally { if (!auth.busyWorking()) tickSession(); }
 }
 function call(method, url, body) {
-  const t = inflight ? auth.workToken() : auth.currentToken();
+  const t = auth.busyWorking() ? auth.workToken() : auth.currentToken();
   if (!t) {
     auth.end();
     return Promise.reject(new LarkError("login ended", { deadToken: true, json: { code: 99991677 } }));
@@ -355,10 +354,12 @@ async function login(returnTo) {
   }
 }
 
-/* A session ended (the clock, a dead-token code from Lark, Log out): auth.end() has
-   cleared the login; drop what's on screen. Drafts stay, so a new login picks up where this left off. */
+/* A session ended (the clock, a dead-token code from Lark, Log out, here or in another tab or
+   tool: they share the login): auth.end() has cleared the login; drop what's on screen. Drafts
+   stay, so a new login picks up where this left off. */
 function sessionEnded(message) {
   for (const d of document.querySelectorAll("dialog[open]")) d.close();   // any open sheet: the push sheet or invoice details
+  resetLowWarning();
   S.data = null; S.lists = null; S.user = null; S.loadError = null;
   S.loginNote = message || "Your login ended after about 2 hours. Log in again to keep going.";
   S.returnTo = location.hash || "#/universe";
@@ -366,6 +367,25 @@ function sessionEnded(message) {
   render();
 }
 auth.onEnded(sessionEnded);
+
+/* Another tab, of Polaris or another Mineski tool, logged in or renewed the login (js/session.js).
+   A tab on the login screen goes straight in and loads; the others repaint the time left. If it's
+   someone else now, what this tab loaded for the previous person goes first. */
+const personOf = (u) => (u && (u.email || u.name)) || "";
+function sharedLogin({ renewed }) {
+  resetLowWarning();   // a fresh 2 hours: the "ends at" warning no longer applies
+  S.loginNote = "";
+  const was = personOf(S.user);
+  auth.loadUser().then((u) => {
+    if (was && personOf(u) !== was) { S.data = null; S.lists = null; S.loadError = null; S.user = u; onRoute(); return; }
+    S.user = u;
+    renderHeader();
+    if (S.view === "settings") renderSettings();
+  }).catch(() => {});
+  if (renewed) return tickSession();
+  if (S.view !== "busy") onRoute();   // busy: this tab is finishing its own login
+}
+auth.onShared(sharedLogin);
 
 /* Every write needs a little time left on the login (a longer task, like several
    uploads, asks for more). */
@@ -635,7 +655,7 @@ function renderSettings() {
       h("div", { class: "account-actions" },
         h("button", { type: "button", class: "btn btn-sm", onclick: () => login(location.hash) }, "Log in again"),
         h("button", { type: "button", class: "btn btn-sm btn-ghost", onclick: () => {
-          auth.end("You've logged out of Polaris. You're still logged in to Lark itself.");
+          auth.logout();   // of every Mineski tool in this browser: they share the login
           location.hash = "#/";
         } }, ic("logout"), "Log out")));
   } else {
@@ -800,12 +820,17 @@ function reloadLocal() {
 }
 
 /* ======================= session clock ======================= */
-let warnedLow = false;
+let warnedLow = false, closeLow = null;
+function resetLowWarning() {
+  warnedLow = false;
+  if (closeLow) closeLow();
+  closeLow = null;
+}
 function tickSession() {
   if (!auth.hadSession()) return;
   if (!auth.currentToken()) {
     // A write or upload still running finishes first (track() ticks again when it settles).
-    if (!inflight && S.view !== "login") auth.end();
+    if (!auth.busyWorking() && S.view !== "login") auth.end();
     return;
   }
   renderHeader();
@@ -813,7 +838,7 @@ function tickSession() {
   if (line) line.textContent = sessionLine();
   if (!warnedLow && auth.msLeft() < 5 * 60 * 1000) {
     warnedLow = true;
-    toast(`Your login ends at ${fmt.time(auth.endsAt())}.`, {
+    closeLow = toast(`Your login ends at ${fmt.time(auth.endsAt())}.`, {
       type: "warn", timeout: 0, detail: "Log in again to keep working without a break.",
       action: "Log in again", onAction: () => login(location.hash),
     });
@@ -856,7 +881,7 @@ onConn(() => {
 });
 window.addEventListener("hashchange", onRoute);
 // A write or upload is running: closing the tab now could lose it.
-window.addEventListener("beforeunload", (e) => { if (inflight) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (auth.busyWorking()) { e.preventDefault(); e.returnValue = ""; } });
 matchMedia("(min-width: 1280px)").addEventListener("change", () => render());
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;

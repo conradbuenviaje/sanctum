@@ -1,13 +1,19 @@
-/* Lark login: OAuth 2.0 + PKCE, the same flow as tech/lark-user-login.
+/* Lark login: OAuth 2.0 + PKCE, the same flow as Fetch, Suppliers and tech/lark-user-login.
 
-   The browser gets a user_access_token through the proxy (which adds the app
-   secret), keeps it in sessionStorage (this tab only), and every Lark call then
-   runs as the signed-in person. Lark gives about 2 hours; there is no refresh
-   token, so after that the user logs in again. */
+   The browser gets a user_access_token through the proxy (which adds the app secret), and
+   every Lark call then runs as the signed-in person. The token is shared by every Mineski tool
+   on this site (js/session.js): log in to Polaris, Fetch or Suppliers and you're logged in to
+   all three, in every tab, with one timer. Lark gives about 2 hours; there is no refresh
+   token, so after that the user logs in again. The login in progress (PKCE state and verifier)
+   stays in this tab's sessionStorage, so it finishes where it began.
+
+   The clock lives in app.js (tickSession); this file keeps the in-flight count (track) so a
+   write already running is never cut off, here or by another tab logging out. */
 
 import { lark, LarkError, viaProxy, wake, onDeadToken, unreachable } from "./net.js";
 import { store, recall } from "./ui.js";
 import { LARK } from "./config.js";
+import * as shared from "./session.js";
 
 export const APP_ID = LARK.appId;
 // Lark returns to this page's own address (minus query, hash and index.html),
@@ -15,20 +21,31 @@ export const APP_ID = LARK.appId;
 export const REDIRECT_URI = location.origin + location.pathname.replace(/index\.html?$/i, "");
 export const SCOPES = LARK.scopes;
 
-const KEY = { token: "polaris.auth.token", pending: "polaris.auth.pending", user: "polaris.auth.user" };
+const PENDING_KEY = "polaris.auth.pending";   // sessionStorage: a login in progress finishes in the tab that started it
 const PENDING_MAX_MS = 10 * 60 * 1000;   // a login started longer ago than this is refused
-const GRACE_MS = 30000;                  // a token with less than this left counts as ended
+const ENDED = "Your login ended after about 2 hours. Log in again to keep going.";
+const ENDED_ELSEWHERE = "Your login ended in another tab. Log in again to keep going.";
+
+// A login this tab kept for itself before logins were shared moves to the shared one.
+shared.adopt("polaris");
 
 /* ---------- the session ---------- */
-const raw = () => recall("session", KEY.token);
+// memo: the last login this tab saw. Work already running (track) finishes with it, even if
+// another tab logs out meanwhile (Lark still accepts the token until it really expires).
+let memo = null;
+const raw = () => { const t = shared.readToken(); if (t) memo = t; return t; };
+// seen: the login this tab last acted on (at load, its own login, or a change it heard). Only those
+// move it, never a plain read, so a read between another tab's write and its event can't hide it.
+let seen = shared.readToken();
+/* The token, if it has more than 30 s left (for new work). */
 export function currentToken() {
   const t = raw();
-  return t && t.access_token && t.expires_at > Date.now() + GRACE_MS ? t : null;
+  return shared.isLive(t) ? t : null;
 }
-/* The token for work already running: Lark still accepts it during the last 30 s. */
+/* The token for work already running (inside track()): Lark still accepts it during the last 30 s. */
 export function workToken() {
-  const t = raw();
-  return t && t.access_token && t.expires_at > Date.now() ? t : null;
+  const t = raw() || (inflight ? memo : null);
+  return t && t.expires_at > Date.now() ? t : null;
 }
 export const hadSession = () => !!raw();
 export const msLeft = () => { const t = raw(); return t ? Math.max(0, t.expires_at - Date.now()) : 0; };
@@ -38,23 +55,70 @@ export function canWrite() {
   const t = currentToken();
   return !!t && (!t.scope || t.scope.split(" ").includes("bitable:app"));
 }
+/* Forget the login: in every Mineski tool and tab (they share it). */
 export function clearSession() {
-  store("session", KEY.token, undefined);
-  store("session", KEY.user, undefined);
+  shared.clear();
+  memo = seen = null;
 }
 
-/* The one way a session ends (the clock, a dead-token code, Log out). Whoever
-   registered with onEnded() drops what's on screen. Calling it again for a session
-   that's already over, with nothing new to say, does nothing. */
+/* The one way a session ends (the clock, a dead-token code, Log out, or any of these in another
+   tab or tool). Whoever registered with onEnded() drops what's on screen: fn(message, { elsewhere }),
+   elsewhere meaning another tab or tool ended it early. Calling it again for a session that's
+   already over, with nothing new to say, does nothing. */
 const enders = new Set();
 export const onEnded = (fn) => { enders.add(fn); return () => enders.delete(fn); };
-export function end(message) {
-  const had = hadSession();
+export function end(message, { elsewhere = false } = {}) {
+  const had = hadSession() || !!memo;
   clearSession();
   if (!had && !message) return;
-  enders.forEach(fn => fn(message));
+  enders.forEach(fn => fn(message, { elsewhere }));
 }
+/* Log out: of every Mineski tool in this browser, since they share the login. Local only
+   (Lark has no revoke call). */
+export const logout = () => end("You've logged out of every Mineski tool in this browser. You're still logged in to Lark itself.");
 onDeadToken(() => end());
+
+/* ---------- the login shared with the other tabs and tools ---------- */
+/* fn({ renewed }) runs when another tab or tool logs in or renews the login. renewed: this tab
+   was already logged in (only the time left, and maybe the person, changed). */
+const sharers = new Set();
+export const onShared = (fn) => { sharers.add(fn); return () => sharers.delete(fn); };
+let endAfterWork = null;
+shared.onChange((t) => {
+  const before = seen;
+  if (shared.isLive(t)) {
+    seen = memo = t;
+    if (before && before.access_token === t.access_token) return;
+    endAfterWork = null;   // logged in again before running work settled: nothing to end any more
+    sharers.forEach(fn => fn({ renewed: shared.isLive(before) }));
+    return;
+  }
+  seen = null;
+  if (!before) return;   // this tab wasn't logged in: nothing to end
+  const elsewhere = before.expires_at > Date.now() + 30000;   // ended early, so not by the clock
+  const message = elsewhere ? ENDED_ELSEWHERE : ENDED;
+  if (inflight) { endAfterWork = { message, elsewhere }; return; }   // a running write finishes first (with memo)
+  end(message, { elsewhere });
+});
+
+/* ---------- work in flight ---------- */
+/* Wrap a write or upload: its calls may use the token until its real expiry (workToken), even
+   if the clock runs out or another tab logs out meanwhile. A login that ended elsewhere during
+   the work ends here when it settles. The app's clock waits for busyWorking() to be false. */
+let inflight = 0;
+export async function track(work) {
+  inflight++;
+  try {
+    return await work();
+  } finally {
+    if (--inflight === 0 && endAfterWork) {
+      const { message, elsewhere } = endAfterWork;
+      endAfterWork = null;
+      end(message, { elsewhere });
+    }
+  }
+}
+export const busyWorking = () => inflight > 0;
 
 /* ---------- login ---------- */
 function b64url(bytes) {
@@ -73,7 +137,7 @@ export async function startLogin(returnTo) {
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
   const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
-  if (!store("session", KEY.pending, { state, verifier, returnTo: returnTo || "", createdAt: Date.now() })) {
+  if (!store("session", PENDING_KEY, { state, verifier, returnTo: returnTo || "", createdAt: Date.now() })) {
     throw new Error("This browser is blocking site storage, so the login can't finish. Allow it for this site.");
   }
   const q = new URLSearchParams({
@@ -86,8 +150,8 @@ export async function startLogin(returnTo) {
 /* Handle Lark's redirect back (?code=…&state=… or ?error=…).
    Resolves {ok, returnTo} or {ok: false, message, err}. */
 export async function finishLogin(params) {
-  const pending = recall("session", KEY.pending);
-  store("session", KEY.pending, undefined);
+  const pending = recall("session", PENDING_KEY);
+  store("session", PENDING_KEY, undefined);
   const returnTo = pending && /^#\/[\w\-\/%.]*$/.test(pending.returnTo || "") ? pending.returnTo : "";
   if (params.has("error")) {
     return { ok: false, returnTo, message: params.get("error") === "access_denied"
@@ -113,28 +177,26 @@ export async function finishLogin(params) {
       code_verifier: pending.verifier,
     } });
     if (!j.access_token) throw new LarkError("no access_token in response", { json: j });
-    store("session", KEY.user, undefined);   // another account must not inherit the last name and picture
-    store("session", KEY.token, {
-      access_token: j.access_token,
-      scope: j.scope || "",
-      expires_at: Date.now() + (Number(j.expires_in) || 7200) * 1000,
-    });
+    shared.writeUser(undefined);   // another account must not inherit the last name and picture
+    const t = { access_token: j.access_token, scope: j.scope || "", expires_at: Date.now() + (Number(j.expires_in) || 7200) * 1000 };
+    shared.writeToken(t);          // every other open tab of every tool hears about it
+    memo = seen = t;
     return { ok: true, returnTo };
   } catch (err) {
     return { ok: false, returnTo, err };
   }
 }
 
-/* The signed-in person's name and picture, cached for this tab. */
+/* The signed-in person's name and picture, cached with the shared login. */
 export async function loadUser() {
-  const cached = recall("session", KEY.user);
+  const cached = shared.readUser();
   if (cached) return cached;
   const t = currentToken();
   if (!t) return null;
   const j = await lark("GET", `${LARK.api}/authen/v1/user_info`, { token: t.access_token, read: true });
   const u = j.data || {};
   const user = { name: u.name || u.en_name || "", avatar: u.avatar_thumb || u.avatar_url || "", email: u.email || "" };
-  store("session", KEY.user, user);
+  if ((currentToken() || {}).access_token === t.access_token) shared.writeUser(user);   // not if another tab logged in someone else meanwhile
   return user;
 }
 

@@ -67,7 +67,7 @@
     (function () {
       var v = window.APP_BUILD = Date.now().toString(36);
       var files = ["js/config.js", "js/sync.js", "js/ops.js", "js/icons.js", "js/ui.js", "js/polaris-ui.js", "js/errors.js",
-                   "js/service.js", "js/settings.js", "js/net.js", "js/auth.js", "js/inbox.js", "js/universe.js", "js/collections.js", "js/andon.js", "js/sources.js", "js/queue.js", "js/rowdoc.js", "js/app.js"];
+                   "js/service.js", "js/settings.js", "js/net.js", "js/session.js", "js/auth.js", "js/inbox.js", "js/universe.js", "js/collections.js", "js/andon.js", "js/sources.js", "js/queue.js", "js/rowdoc.js", "js/app.js"];
       var map = { imports: {} };
       files.forEach(function (f) { map.imports[new URL(f, location.href).href] = new URL(f + "?v=" + v, location.href).href; });
       document.write('<link rel="stylesheet" href="css/theme.css?v=' + v + '">');

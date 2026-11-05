@@ -5,7 +5,8 @@
    here from tests/.preview-fixture.json, a read-only snapshot of the test tables
    (make it with the Node live check's loader). Pushes and ignores are simulated
    in this tab's memory: NOTHING is sent to Lark. A badge says so on screen.
-   Use a separate tab: this puts a fake login in the tab's sessionStorage. */
+   The fake login lives under its own keys (mineski.preview.auth.*, see js/session.js),
+   so it never replaces a real one. */
 (function () {
   "use strict";
   var realFetch = window.fetch.bind(window);
@@ -13,10 +14,11 @@
   var fixture = function () {
     return fx || (fx = realFetch("tests/.preview-fixture.json?v=" + Date.now()).then(function (r) { return r.json(); }));
   };
-  sessionStorage.setItem("polaris.auth.token", JSON.stringify({
+  window.MINESKI_PREVIEW = true;   // js/session.js keeps this login under mineski.preview.auth.*
+  localStorage.setItem("mineski.preview.auth.user", JSON.stringify({ name: "Preview Mode", avatar: "", email: "" }));   // the name first: other tabs read it when the token's change reaches them
+  localStorage.setItem("mineski.preview.auth.token", JSON.stringify({
     access_token: "preview-only", scope: "bitable:app", expires_at: Date.now() + 95 * 60000,
   }));
-  sessionStorage.setItem("polaris.auth.user", JSON.stringify({ name: "Preview Mode", avatar: "", email: "" }));
 
   var seq = 0;
   var reply = function (obj, ms) {

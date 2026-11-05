@@ -52,8 +52,9 @@ phone and on a PC, and every change is made as you, with your own Lark login.
 
 ## Using Polaris
 
-1. **Log in with Lark.** A login lasts about 2 hours and belongs to this browser tab
-   (another tab logs in on its own, in one click). The clock in the header shows how
+1. **Log in with Lark.** A login lasts about 2 hours and is shared with Fetch and Suppliers:
+   log in to any of them and you're logged in to all three in this browser, in every tab,
+   with one timer (closing the tab doesn't log you out). The clock in the header shows how
    long you have left (it turns amber in the last 10 minutes), a message stays on screen
    in the last 5, and Settings shows the exact time it ends. **Log in again** there to
    get a fresh 2 hours. A push that's already running isn't cut off by the clock.
@@ -543,7 +544,7 @@ The gear in the top bar. It works logged out too.
 
 | Section | What it does |
 | ------- | ------------ |
-| **Account** | Who you are, when your login ends, **Log in again** (a fresh 2 hours) and **Log out**. Log out only clears Polaris in this tab; you stay logged in to Lark itself. |
+| **Account** | Who you are, when your login ends, **Log in again** (a fresh 2 hours) and **Log out**. Log out logs you out of every Mineski tool in this browser (Polaris, Fetch and Suppliers share the login); you stay logged in to Lark itself. |
 | **Appearance** | Light, Dark or System. |
 | **Connections** | **Connection service**: Awake (with its version once it reports one), Waking up, Out of date or Unreachable, with **Wake up** / **Try again**. **Lark tables**: connected, with the row count, or the column problems found. One row per table, each with **Open in Lark**. |
 | **Advanced** (only on a page opened from this computer) | Another connection service address, saved in this browser. Only an `https://` address, or an `http://` one on this computer. A `?lark=<address>` link does the same for one tab, and `?reset` clears it. While any override is active the top bar shows a red **Overridden** badge (hover it to see what). |
@@ -559,8 +560,14 @@ What Polaris keeps in this browser (every key starts with `polaris.`, all values
 | `draft` | this browser | what you typed in a push sheet you cancelled, with its retry token, for up to 7 days. Files aren't kept. |
 | `queue` | this browser | pushes waiting in the queue (or that didn't go through): what each writes, with its retry token, for up to 2 days. Finished pushes and files that hadn't uploaded aren't kept. Not cleared by **Clear local data**: use **Remove** on the queue page. |
 | `auditHidden`, `uniSort`, `uniCollapsed`, `uniOpened`, `colSort`, `colCollapsed`, `andonCodeSort`, `srcSort` | this browser | hidden audit cards, sort order, folded groups |
-| `auth.token`, `auth.pending`, `auth.user` | this tab | your login, a login in progress, your name and picture. Gone when the tab closes. |
+| `auth.pending` | this tab | a login in progress (it finishes in the tab that started it) |
 | `override.lark` | this tab | the `?lark=` link override |
+
+The login itself is **shared by the Mineski tools on this site** (Polaris, Fetch, Suppliers):
+`mineski.auth.token` (your login) and `mineski.auth.user` (your name and picture) in this
+browser, through `js/session.js` (copied unedited from `design-ref/mineski-systems-design/assets/`).
+It lasts until it ends, about 2 hours after you logged in, or until you log out in any of them.
+A login kept by an older Polaris in its tab (`polaris.auth.token`) moves over on the first load.
 
 Polaris doesn't keep a copy of the tables: every load reads them fresh from Lark.
 
@@ -740,10 +747,14 @@ the live tables.
   logins are safe (they're bound to your tab by PKCE), but until the proxy adds the secret only
   to the login code exchange (see `SYSTEMS-PARITY.md`, P0) the protection of the data is Lark's
   permissions on the app, not Polaris. The Node tools no longer need that route.
-- **Your login lives in this tab only** (`sessionStorage`): closing the tab ends it, and each new tab
-  logs in on its own (one click if Lark still knows you). It is sent only to the connection service,
-  in an `Authorization` header, never in an address. **Log out is local**: it clears Polaris here;
-  Lark has no way to revoke a login, so it still lasts up to 2 hours if someone copied it.
+- **One login for every Mineski tool on this site** (`localStorage` `mineski.auth.token`): log in to
+  Polaris, Fetch or Suppliers and every tab of all three is logged in, with one timer. Closing the
+  tab doesn't log you out (the login lasts about 2 hours), so on a shared computer use **Log out**.
+  Every page on `mineski-stephen.github.io` can read that storage, so only Mineski tools are
+  published there. The token is sent only to the connection service, in an `Authorization` header,
+  never in an address. **Log out is local**: it logs you out of every Mineski tool in this browser
+  (other open tabs show the login screen at once, after any push already running); Lark has no
+  way to revoke a login, so it still lasts up to 2 hours if someone copied it.
 - **The page may only talk to itself and the connection service**: a `Content-Security-Policy` meta lists them
   (and local addresses for testing), and a `referrer` meta keeps addresses private.
 - **Overrides work only on a local page**, accept only `https` (or local `http`) addresses, and always show a red badge.
@@ -799,6 +810,7 @@ the live tables.
 | *Out of date (…). Ask the admin to redeploy it.* (Settings > Connections) | The connection service is older than this page needs (`SERVICES.lark.min` in `js/config.js`). The admin redeploys it; see its README. |
 | *This address (…) isn't registered on the Lark app* on the login screen | Add that exact address under *Security Settings > Redirect URLs* for the app. |
 | *Your login ended after about 2 hours.* | Log in again. Watch the clock in the header; *Log in again* in Settings renews it early. |
+| *Your login ended in another tab.* | You (or someone at this computer) logged out of Polaris, Fetch or Suppliers in another tab, or Lark ended the login there. They share one login, so log in again in any of them. |
 | *Your login has ended. Log in again.* | Lark said the login is over (it expired, or was ended in Lark). Log in again; your drafts are still there. |
 | *Your login ends at 4:30 PM.* (stays on screen) | Log in again to keep working without a break. |
 | *Your login is about to end, so this wasn't sent.* | Log in again, then try it again. |
@@ -895,7 +907,8 @@ design language first, copy them over unedited, then `npm run check:shell` confi
 | `js/errors.js` | Errors as facts (`LarkError`), the dead-token codes, and one sentence for every code (`describeLark`). Pure. |
 | `js/service.js` | Which addresses may override the connection service, and whether its `GET /` answer means awake and recent enough. Pure. |
 | `js/settings.js` | The saved connection service address and `?lark=` / `?reset` link overrides (local pages only). |
-| `js/auth.js` | Lark login (OAuth + PKCE), the session, and how a session ends. |
+| `js/auth.js` | Lark login (OAuth + PKCE), the session, work in flight (`track`), and how a session ends, here or in another tab. |
+| `js/session.js` | The login shared by every Mineski tool on the site. Copied unedited from `design-ref/mineski-systems-design/assets/`. |
 | `js/app.js` | Routes, header, loading, Settings, the session clock, and what happens after a push (quietly, for the queue). |
 | `js/inbox.js` | The cards, the push sheet (with the BD picker), Ignore / Undo, and the push itself (`perform`) that the queue runs. |
 | `js/queue.js` | The push queue: runs pushes one at a time, re-checks uncertain ones, keeps waiting ones in this browser; the Queue tab, its hover list and the queue page. |

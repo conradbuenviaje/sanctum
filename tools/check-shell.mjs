@@ -49,6 +49,12 @@ function assetsDir() {
     join(ROOT, ".claude", "skills", "mineski-design-language", "assets")].filter(Boolean);
   return candidates.find(d => existsSync(join(d, "ui.js")));
 }
+// The systems design's shared files (js/session.js: the login shared by the Mineski tools).
+function systemsDir() {
+  const candidates = [join(ROOT, "..", "design-ref", "mineski-systems-design", "assets"),
+    join(ROOT, ".claude", "skills", "mineski-systems-design", "assets")];
+  return candidates.find(d => existsSync(join(d, "session.js")));
+}
 
 function run() {
   let failures = 0;
@@ -76,6 +82,10 @@ function run() {
                                   ["css/theme.css", join("themes", "polaris.css")]]) {
       ok(md5(join(ROOT, mine)) === md5(join(assets, theirs)), `${mine} is identical to the design language's ${theirs.replace(sep, "/")}`);
     }
+  }
+  const systems = systemsDir();
+  if (ok(!!systems, "systems design assets found")) {
+    ok(md5(join(ROOT, "js", "session.js")) === md5(join(systems, "session.js")), "js/session.js is identical to the systems design's assets/session.js");
   }
 
   console.log("Page");

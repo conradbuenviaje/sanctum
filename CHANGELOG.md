@@ -9,6 +9,21 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 1.11.0 · Nov 5, 2026
+
+- **Changed:** one login for Polaris, Fetch and Suppliers. Log in to any of them and
+  you're logged in to all three in this browser, in every tab, with one timer (the
+  time left in the top bar is the same everywhere). Opening another tool or a new
+  tab no longer asks you to log in again, and the login stays when you close the
+  tab, until it ends about 2 hours after you logged in.
+- **Changed:** Log out logs you out of all three in this browser (you're still
+  logged in to Lark itself). A tab that's open elsewhere shows the login screen at once.
+- **Changed:** logging in again anywhere renews every tab: the "Your login ends at…"
+  warning closes and the timer starts over.
+- **Fixed:** a push or upload already running finishes even if the login ends in
+  another tab meanwhile; then this tab shows the login screen too.
+- If you were logged in before this update, you stay logged in.
+
 ## 1.10.4 · Nov 4, 2026
 
 - **Changed:** switching the table beside the list (Universe, Collections, ANDON, the
