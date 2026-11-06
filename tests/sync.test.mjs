@@ -15,6 +15,7 @@ import {
   tagsOf, tagsWith, tagsWithout, variableColumns, customTagsFrom, customTagOf, tagGroups,
   isLostProject, requiredMessage, sourceView, statusChange,
   filterIndex, cardFacets, passesFilters, filterChoices, NONE, closestMatches,
+  ceCards, ceWrites, linkIn, validLink, lookalikeTags, taggingView, UNTAGGED,
 } from "../js/sync.js";
 import { writableOnly } from "../js/ops.js";
 
@@ -1262,4 +1263,60 @@ test("brief files: a blank Other Attachments gets a card linking to the brief's 
   // a table without its column gives no cards
   const fields = { universe: [{ field_name: "Project Code" }], brief: [{ field_name: L }] };
   assert.equal(fileCards(universe, briefs, RULES, { fields }).cards.length, 0);
+});
+
+test("CE audit: the Universe's Internal CE (Sheet) and ANDON's Working CE must be the same link", () => {
+  const seg = (text) => [{ type: "text", text }];
+  const url = (link) => ({ link, text: link, type: "url" });
+  const A = "https://docs.google.com/spreadsheets/d/AAA/edit", B = "https://docs.google.com/spreadsheets/d/BBB/edit";
+  const U = RULES.ceSync.universe, N = RULES.ceSync.andon;
+  const universe = [
+    { record_id: "u1", fields: { "Project Code": seg("2026TEG-P0001"), "Project": seg("Same"), [U]: url(A) } },
+    { record_id: "u2", fields: { "Project Code": seg("2026TEG-P0002"), "Project": seg("Different"), [U]: url(A) } },
+    { record_id: "u3", fields: { "Project Code": seg("2026TEG-P0003"), "Project": seg("Universe blank") } },
+    { record_id: "u4", fields: { "Project Code": seg("2026TEG-P0004"), "Project": seg("Both blank") } },
+    { record_id: "u5", fields: { "Project Code": seg("2026TEG-P0005"), "Project": seg("Not in ANDON") } },
+    { record_id: "u6", fields: { "Project Code": seg("2026TEG-P0006"), "Project": seg("Trailing slash"), [U]: url(A + "/") } },
+  ];
+  const andon = [
+    { record_id: "a1", fields: { "Project Code": seg("2026TEG-P0001"), [N]: url(A) } },
+    { record_id: "a2", fields: { "Project Code": seg("2026TEG-P0002"), [N]: url(B) } },
+    { record_id: "a3", fields: { "Project Code": seg("2026TEG-P0003"), [N]: url(B) } },
+    { record_id: "a4", fields: { "Project Code": seg("2026TEG-P0004") } },
+    { record_id: "a6", fields: { "Project Code": seg("2026TEG-P0006"), [N]: url(A) } },
+  ];
+  const { cards } = ceCards(universe, andon, RULES);
+  const by = Object.fromEntries(cards.map(c => [c.rowId, c]));
+  assert.deepEqual(cards.map(c => c.rowId), ["u4", "u3", "u2"]);   // newest code first
+  assert.equal(by.u2.suggestion, B);                               // ANDON's first
+  assert.equal(by.u3.suggestion, B);
+  assert.equal(by.u4.suggestion, "");                              // both blank: pasted by hand
+  assert.deepEqual(by.u2.andonRows, ["a2"]);
+  assert.deepEqual(ceWrites(B, RULES), { universe: { [U]: { link: B, text: B } }, andon: { [N]: { link: B, text: B } } });
+  // A table without its column gives no cards.
+  assert.equal(ceCards(universe, andon, RULES, { fields: { universe: [{ field_name: "Project Code" }], andon: [{ field_name: N }] } }).cards.length, 0);
+  assert.equal(linkIn(url(A)), A);
+  assert.equal(linkIn(seg(A)), A);
+  assert.equal(validLink(" " + A + " "), A);
+  assert.equal(validLink("docs.google.com/x"), "");
+  assert.equal(validLink("http://x.com/a"), "");
+});
+
+test("Tagging: every project and its tags, tag counts, filters, and tags that look misspelt", () => {
+  const seg = (text) => [{ type: "text", text }];
+  const rec = (id, code, tags) => ({ record_id: id, fields: { "Project Code": seg(code), "Project": seg(`P ${id}`), "Status": "Signed CE", ...(tags ? { Tags: seg(tags) } : {}) } });
+  const records = [rec("r1", "2026TEG-P0001", "Booth,Event"), rec("r2", "2026TEG-P0003", "booth"), rec("r3", "2026TEG-P0002", ""),
+                   rec("r4", "2026TEG-P0004", "Federal Land"), rec("r5", "2026TEG-P0005", "Federal Lnad, Event")];
+  const v = taggingView(records, "Tags");
+  assert.deepEqual(v.rows.map(r => r.id), ["r5", "r4", "r2", "r3", "r1"]);
+  assert.deepEqual(v.tags.map(t => [t.tag, t.count]), [["Booth", 2], ["Event", 2], ["Federal Land", 1], ["Federal Lnad", 1]]);
+  assert.deepEqual(v.tags.find(t => t.tag === "Federal Lnad").like, ["Federal Land"]);
+  assert.deepEqual(v.tags.find(t => t.tag === "Booth").like, []);
+  assert.equal(v.untagged, 1);
+  assert.deepEqual(taggingView(records, "Tags", { tag: "BOOTH" }).rows.map(r => r.id), ["r2", "r1"]);
+  assert.deepEqual(taggingView(records, "Tags", { tag: UNTAGGED }).rows.map(r => r.id), ["r3"]);
+  assert.deepEqual(taggingView(records, "Tags", { query: "event p0005" }).rows.map(r => r.id), ["r5"]);
+  assert.deepEqual(lookalikeTags("federal-land", ["Federal Land", "Event"]), ["Federal Land"]);
+  assert.deepEqual(lookalikeTags("Evnt", ["Event", "Booth"]), ["Event"]);
+  assert.deepEqual(lookalikeTags("Expo", ["Event", "Booth"]), []);
 });

@@ -6,7 +6,7 @@ import { TABLE_TITLES, pushBrief, pushPar, pushCollections, pushAndon, setIgnore
          saveEdit, findRecord, setTag, syncPm } from "./ops.js";
 import {
   universeFromBrief, collectionsChange, stepStatus, parAfterAdding, defaultVat, vatMentions,
-  people, plain, pmWrites, andonFromBrief, auditPatch, auditMissing, auditFilesMissing, monthOf, clean, editChanges, editWrite,
+  people, plain, pmWrites, ceWrites, validLink, andonFromBrief, auditPatch, auditMissing, auditFilesMissing, monthOf, clean, editChanges, editWrite,
   tagsWith, tagsWithout, requiredMessage, FILTER_KEYS, NONE, passesFilters, filterChoices, closestMatches,
 } from "./sync.js";
 import { uploadSizeProblem } from "./errors.js";
@@ -181,7 +181,7 @@ export function createInbox(ctx) {
 
   // The kinds of push each tab's cards make (TABLES_FOR / neededBy in app.js and ops.js).
   const TAB_KINDS = { universe: ["brief", "par", "files"], invoice: ["invoice"], andon: ["andon", "approval"],
-                      audit: ["audit:universe", "audit:andon", "pm"] };
+                      audit: ["audit:universe", "audit:andon", "pm", "ce"] };
   const tabProblems = () => [...new Set([S.tab, ...(TAB_KINDS[S.tab] || [])].flatMap(k => ctx.problemsFor(k)))];
 
   /* Why a kind of push is off, in one sentence ("" when it's on). */
@@ -223,7 +223,8 @@ export function createInbox(ctx) {
     if (!q) return true;
     const am = c.am ? c.am.map(u => u.name).join(" ") : "";
     const extra = c.kind === "audit" ? `${c.target} ${c.gaps.join(" ")} ${c.tag || ""}`
-      : c.kind === "files" ? `${c.field} ${c.label}` : "";
+      : c.kind === "files" ? `${c.field} ${c.label}`
+      : c.kind === "ce" ? `CE ${c.universeLink} ${c.andonLinks.join(" ")}` : "";
     return `${c.code} ${c.name} ${c.requestNo} ${c.status} ${am} ${extra}`.toLowerCase().includes(q.toLowerCase().trim());
   }
 
@@ -280,6 +281,7 @@ export function createInbox(ctx) {
     if (c.kind === "audit") return auditCardEl(c);
     if (c.kind === "approval") return approvalCardEl(c);
     if (c.kind === "pm") return pmCardEl(c);
+    if (c.kind === "ce") return ceCardEl(c);
     if (c.kind === "files") return filesCardEl(c);
     const writable = ctx.canWriteFor(c.kind);
     const notes = [];
@@ -351,6 +353,23 @@ export function createInbox(ctx) {
         h("span", { class: "flow-step" }, h("b", null, "Universe"), ` ${who(c.universePm)}`),
         h("span", { class: "flow-step" }, h("b", null, "ANDON"), ` ${andon}`))),
       h("div", { class: "item-actions" }, mainButton("Fill", "pm", () => openSheet(c))));
+  }
+
+  /* A project whose CE link isn't the same in the Universe and ANDON (or is blank in one). */
+  function ceCardEl(c) {
+    const link = (url) => (url ? h("a", { href: url, target: "_blank", rel: "noopener", class: "ce-link", title: url }, url) : "blank");
+    const andon = [...new Set(c.andonLinks)];
+    return h("article", { class: "card item" + (S.working.has(c.id) ? " is-working" : "") + (S.entering.has(c.id) ? " is-entering" : ""),
+                          "data-id": c.id },
+      h("div", { class: "item-head" },
+        copyable(c.code, { label: "project code", cls: "code" }),
+        h("span", { class: "badge badge-info" }, "CE"),
+        c.status ? h("span", { class: "item-date" }, c.status) : null),
+      h("h3", null, c.name || "(no name)"),
+      h("ul", { class: "notes" }, h("li", { class: "flow" },
+        h("span", { class: "flow-step" }, h("b", null, RULES.ceSync.universe), " ", link(c.universeLink)),
+        h("span", { class: "flow-step" }, h("b", null, `ANDON ${RULES.ceSync.andon}`), " ", ...andon.flatMap((u, i) => [i ? " / " : null, link(u)])))),
+      h("div", { class: "item-actions" }, mainButton("Fill", "ce", () => openSheet(c))));
   }
 
   /* An ANDON row whose project has a Project Approval: its Request No. goes into
@@ -916,6 +935,7 @@ export function createInbox(ctx) {
       const bad = ch.bad.filter(k => k in ch.edits);
       const tooBig = ch.files.map(f => uploadSizeProblem(f, LARK.maxUploadMb)).filter(Boolean);
       s.blocked = !ctx.canWriteFor(`edit:${c.table}`) ? `Pushing to ${EDIT_WHERE[c.table]} is off: ${ctx.problemsFor(`edit:${c.table}`)[0] || "your login can only read the tables."}`
+        : s.checking ? "Checking the row against Lark…"
         : bad.length ? `Check ${bad.join(", ")}: ${bad.length === 1 ? "it isn't" : "they aren't"} valid yet.`
         : tooBig.length ? tooBig[0]
         : n ? "" : "Nothing changed yet.";
@@ -940,21 +960,40 @@ export function createInbox(ctx) {
     };
     s.refresh = refresh;
 
-    // The whole row, fresh from Lark (every column, not only the ones the table shows).
+    const draw = () => {
+      // A redraw keeps the edits (they're in ch), and the field being typed in.
+      const focused = docBox.contains(document.activeElement) ? document.activeElement.id : "";
+      const top = docBox.scrollTop;
+      doc = rowDoc.renderEdit(docBox, { table: c.table, loaded: ch.loaded, choices: ch, names: ch.names, name: c.name,
+                                         peoplePicker, onChange: refresh });
+      docBox.scrollTop = top;
+      if (focused && document.getElementById(focused)) document.getElementById(focused).focus();
+      refresh();
+    };
+
+    // The whole row, fresh from Lark (every column, not only the ones the table shows). A table
+    // read with every column (ANDON) already has it as listed: that shows at once, and the fresh
+    // read only redraws it if Lark has something newer. Push waits for the fresh read either way.
     const load = async () => {
       s.blocked = "Reading the row…";
+      s.checking = true;
       go.disabled = true;
       $("#sheetError").hidden = true;
-      docBox.replaceChildren(h("div", { class: "loader" }, h("div", { class: "loader-title" }, h("span", { class: "spinner" }), "Reading the row from Lark…")));
+      const listed = Array.isArray((S.columns || {})[c.table]) ? null
+        : (S.data && (S.data[c.table] || []).find(r => r.record_id === c.rowId)) || null;
+      if (listed) { ch.loaded = listed.fields || {}; draw(); }
+      else docBox.replaceChildren(h("div", { class: "loader" }, h("div", { class: "loader-title" }, h("span", { class: "spinner" }), "Reading the row from Lark…")));
       try {
         const rec = await findRecord(ctx.call, ctx.tables[c.table], c.rowId);
         if (sheet !== s) return;   // closed meanwhile
         if (!rec) throw Object.assign(new Error("gone"), { userMessage: "That row isn't in Lark any more. Refresh to see what Lark has now." });
-        ch.loaded = rec.fields || {};
-        doc = rowDoc.renderEdit(docBox, { table: c.table, loaded: ch.loaded, choices: ch, names: ch.names, name: c.name,
-                                           peoplePicker, onChange: refresh });
-        refresh();
+        s.checking = false;
+        const fresh = rec.fields || {};
+        const same = listed && JSON.stringify(fresh) === JSON.stringify(ch.loaded);
+        ch.loaded = fresh;
+        if (same) refresh(); else draw();
       } catch (err) {
+        s.checking = false;
         if (sheet !== s || isDeadToken(err)) return;
         docBox.replaceChildren(h("div", { class: "callout callout-err" }, ic("alert"), h("div", null, describe(err)),
           h("button", { type: "button", class: "btn btn-sm", onclick: load }, "Try again")));
@@ -971,6 +1010,7 @@ export function createInbox(ctx) {
     }
     if (c.kind === "andon") return { pm: [], tribe: "" };
     if (c.kind === "pm") return { pm: c.suggestion.map(u => ({ id: u.id, name: u.name || u.id, email: "" })) };
+    if (c.kind === "ce") return { link: c.suggestion || "" };
     if (c.kind === "edit") return { edits: {}, files: [], bad: [], loaded: null };
     if (c.kind === "files") return { files: [] };
     if (c.kind === "audit") return { fields: [...c.gaps], vat: defaultVat(c.brief ? c.brief.currency : "PHP"), values: null, edited: [], bad: [], files: [] };
@@ -995,11 +1035,12 @@ export function createInbox(ctx) {
                                      audit: `Fill blanks in ${c.target === "andon" ? "ANDON" : "the Universe"}`,
                                      edit: `Changes to this ${EDIT_WHERE[c.table]} row`, view: TABLE_TITLES[c.table],
                                      approval: "Add approval to ANDON", pm: "Set the PM in the Universe and ANDON",
+                                     ce: "Set the CE link in the Universe and ANDON",
                                      files: `Upload the brief's files to ${c.field}` }[c.kind];
     $("#sheetSub").replaceChildren(copyable(c.code, { label: "project code", empty: "No code" }),
       ...((c.kind === "par" || c.kind === "invoice" || c.kind === "view" || c.kind === "approval") && c.requestNo ? [" · request ", copyable(c.requestNo, { label: "request number" })] : []), ` · ${c.name}`);
     go.querySelector(".label").textContent = { brief: "Push to Universe", par: "Add PAR", invoice: "Add to Collections", andon: "Add to ANDON", audit: "Fill",
-                                               edit: "Push changes", approval: "Add approval", pm: "Set PM",
+                                               edit: "Push changes", approval: "Add approval", pm: "Set PM", ce: "Set CE link",
                                                files: "Upload" }[c.kind];
     $("#sheetError").hidden = true;
     const body = $("#sheetBody");
@@ -1015,6 +1056,7 @@ export function createInbox(ctx) {
     else if (c.kind === "audit") buildAudit(body, c);
     else if (c.kind === "approval") buildApproval(body, c);
     else if (c.kind === "pm") buildPm(body, c);
+    else if (c.kind === "ce") buildCe(body, c);
     else if (c.kind === "files") buildFiles(body, c);
     else buildInvoice(body, c);
     placeDoc();
@@ -1116,6 +1158,34 @@ export function createInbox(ctx) {
     const pool = [...new Map([...(S.pmPool || []), ...S.pool, ...c.universePm, ...c.andonPm.flat()].map(p => [p.id, p])).values()];
     put(body, fieldEl("PM", false, peoplePicker({ id: "sheetPmSync", selected: ch.pm || [], pool, placeholder: "Pick the PM",
       single: true, head: "Frequent PMs", onChange: (list) => { ch.pm = list; refresh(); } }), "sheetPmSync"));
+    refresh();
+  }
+
+  /* --- CE: one link for the Universe's Internal CE (Sheet) and ANDON's Working CE. Off while it isn't a link. --- */
+  function buildCe(body, c) {
+    const ch = sheet.choices;
+    const input = h("input", { type: "url", id: "sheetCe", autocomplete: "off", placeholder: "https://docs.google.com/spreadsheets/…" });
+    input.value = ch.link || "";
+    const note = h("p", { class: "note", role: "status", hidden: true });
+    const refresh = () => {
+      const ok = validLink(ch.link);
+      sheet.blocked = ok ? "" : "CE link";
+      note.hidden = ok || !String(ch.link || "").trim();
+      note.textContent = "Paste the whole link, starting with https://.";
+      go.disabled = sheet.busy || !!sheet.blocked;
+      paintDoc();
+    };
+    sheet.refresh = refresh;
+    input.addEventListener("input", () => { ch.link = input.value.trim(); refresh(); });
+    // Two different links: one click picks either.
+    const choices = [...new Set([...c.andonLinks, c.universeLink].filter(Boolean))];
+    const pick = choices.length > 1 ? h("div", { class: "ce-picks" }, choices.map(u => h("button", { type: "button", class: "btn btn-sm",
+      title: u, onclick: () => { ch.link = u; input.value = u; refresh(); } },
+      c.andonLinks.includes(u) ? (u === c.universeLink ? "Use this one" : "Use ANDON's") : "Use the Universe's"))) : null;
+    put(body,
+      h("p", { class: "set-sub" }, c.universeLink || c.andonLinks.some(Boolean)
+        ? "The link goes into both tables. Check it's the right sheet." : "Neither table has the CE yet. Paste the link to its sheet."),
+      fieldEl("CE link", false, input, "sheetCe"), pick, note);
     refresh();
   }
 
@@ -1351,6 +1421,11 @@ export function createInbox(ctx) {
       return { ...base, verb: `Upload ${n} file${n === 1 ? "" : "s"} to ${c.field}`, table: "universe", rowId: c.rowId,
                fields: { [c.field]: (ch.files || []).map(f => ({ name: f.name })) } };
     }
+    if (c.kind === "ce") {   // the Universe row beside the sheet (ANDON gets the same)
+      const link = validLink(ch.link);
+      return { ...base, verb: "Set the CE link in the Universe and ANDON", table: "universe", rowId: c.rowId,
+               fields: link ? ceWrites(link, RULES).universe : {} };
+    }
     if (c.kind === "pm") {   // the Universe row beside the sheet (ANDON gets the same)
       const p = (ch.pm || [])[0];
       if (p) names[p.id] = p.name;
@@ -1407,6 +1482,17 @@ export function createInbox(ctx) {
       payload = writes.universe;
       res = await syncPm(ctx.call, ctx.tables, rows, writes, (t) => ctx.fieldsOf(t));
       return { res, payload, extra: { pmName: p.name } };
+    }
+    if (c.kind === "ce") {
+      // Refused here too: an https link. Both tables are re-read before either is written.
+      const link = validLink(ch.link);
+      if (!link) throw Object.assign(new Error("required"), { userMessage: "Paste the CE link first (starting with https://)." });
+      const writes = ceWrites(link, RULES);
+      const rows = [{ table: "universe", rowId: c.rowId, loaded: c.loaded.universe },
+                    ...c.andonRows.map(id => ({ table: "andon", rowId: id, loaded: c.loaded.andon[id] }))];
+      payload = writes.universe;
+      res = await syncPm(ctx.call, ctx.tables, rows, writes, (t) => ctx.fieldsOf(t), "Both already have that CE link.");
+      return { res, payload, extra };
     }
     if (c.kind === "files") {
       // Refused here too: at least one file, none too big. They upload first (a failed

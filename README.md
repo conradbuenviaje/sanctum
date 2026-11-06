@@ -32,6 +32,7 @@ phone and on a PC, and every change is made as you, with your own Lark login.
 - [The audit](#the-audit)
 - [The Universe view](#the-universe-view)
 - [The ANDON view](#the-andon-view)
+- [The Tagging page](#the-tagging-page)
 - [The row editor](#the-row-editor)
 - [The Collections view](#the-collections-view)
 - [Settings](#settings)
@@ -366,6 +367,15 @@ of the project; it stays off while the PM is blank. Before writing, both tables 
 re-read: if either PM was changed in Lark meanwhile, nothing is written anywhere and the
 queue says which. The columns are `pmSync` in [`js/config.js`](js/config.js).
 
+**The CE link must be the same in the Universe and ANDON.** The same check for the
+Universe's **Internal CE (Sheet)** and ANDON's **Working CE** (both URL columns): a
+project in both whose links differ (in any of its ANDON rows), or where either is
+blank, gets an Audit card showing both links. **Fill** asks for one link, filled in
+with ANDON's (else the Universe's; with two different links, a button picks either;
+with both blank, you paste it). It must start with `https://`. It's written to the
+Universe and every ANDON row of the project, after both are re-read, exactly like the
+PM. The columns are `ceSync` in [`js/config.js`](js/config.js).
+
 **Signed projects must have their signed CE on file.** A Universe project whose
 Status is *Fully Closed*, *For Closing*, *For Collection* or *Signed CE* gets a card
 when its **Signed CE (PDF)** attachment is blank, even without a brief (*Won - Awaiting
@@ -448,6 +458,26 @@ row, sorted by **Project Code, Z-A** (codes start with the year and count up, so
 newest projects are on top; numbers compare as numbers, so P1000 is above P0999;
 click the column to flip it to A-Z).
 Columns: Project, Project Code, AM, PM (LEAD), TRIBE, Event Start.
+
+## The Tagging page
+
+**Tagging**, in the top bar before *Data Audit*: every Universe project and its **Tags**
+(plain text, tags separated by commas), newest Project Code first, to tag projects by hand without
+misspelling a tag:
+
+- **The tags in use**, above the table, each with how many projects have it, and
+  *No tags*. A click shows only those projects (again: all of them). A tag that looks
+  like a misspelling of another (the same letters, or a letter or two off:
+  *Federal Lnad*, *federal-land*) is marked ⚠, and says which one on hover.
+- **× on a tag** takes it off that project. **+** opens a box that suggests the tags in
+  use; Enter adds it. A tag typed in another case takes the spelling in use
+  (*booth* → *Booth*); a new tag that looks like one in use asks first (*Use "Event"* or
+  *Add "Evnt" as a new tag*).
+- Each change is written at once and read back, like *Mark as …*: the row is re-read
+  and only that tag added or taken out, so tags someone else added meanwhile stay.
+  **Undo** in the message puts it back. A click elsewhere on the row opens it in the
+  row editor.
+- The search looks through the code, project, status and tags.
 
 ---
 
@@ -919,6 +949,7 @@ design language first, copy them over unedited, then `npm run check:shell` confi
 | `js/rowdoc.js` | The row beside the push sheet: the Lark row as the push will leave it, changes highlighted. |
 | `js/universe.js` | The Universe table. |
 | `js/andon.js` | The ANDON table. |
+| `js/tagging.js` | The Tagging page: every Universe project and its tags, added and taken off one at a time. |
 | `js/sources.js` | The Project Brief, Project Approval and Invoice Request tables (read-only), shown with the table switcher; a row opens read-only (`inbox.js` `openView`). |
 | `js/collections.js` | The Collections table and its invoice details sheet. |
 | `js/icons.js`, `js/ui.js` | The shared Mineski icons and UI helpers: unedited copies of `design-ref/mineski-design-language/assets/`. Change them there, then copy them over. |

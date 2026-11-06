@@ -731,6 +731,61 @@ export function customTagsFrom(records, cols, variable) {
   return out;
 }
 
+/* ======================= the Tagging page ======================= */
+
+// Letters and digits only, lowercased: "Federal-Land " and "federal land" are one tag.
+const tagKey = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, "");
+function editDistance(a, b) {
+  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const was = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = was;
+    }
+  }
+  return row[b.length];
+}
+
+/* The tags in `known` that `tag` is probably a misspelling of: the same letters
+   ("Federal-Land"), or a letter or two off ("Federal Lnad"). Not `tag` itself. */
+export function lookalikeTags(tag, known) {
+  const k = tagKey(tag);
+  if (!k) return [];
+  const room = k.length >= 8 ? 2 : k.length >= 4 ? 1 : 0;
+  return (known || []).filter(t => String(t).toLowerCase() !== String(tag).toLowerCase())
+    .filter(t => { const o = tagKey(t); return o === k || (room && Math.abs(o.length - k.length) <= room && editDistance(o, k) <= room); });
+}
+
+/* Every Universe project and its tags, Project Code Z-A (newest first). `query`
+   searches the code, name, status and tags; `tag` keeps the projects with that tag
+   ("" none: every project; null-like "(none)": the untagged). Also every tag in use,
+   most used first, each with its count and the tags it looks like a misspelling of. */
+export const UNTAGGED = "(no tags)";
+export function taggingView(records, field, { query = "", tag = "" } = {}) {
+  const all = (records || []).map(r => {
+    const f = r.fields || {};
+    return { id: r.record_id, code: normCode(plain(f["Project Code"])) || clean(f["Project Code"]), name: clean(f["Project"]),
+             status: clean(f["Status"]), year: clean(f["Year"]), tags: tagsOf(f[field]) };
+  });
+  const counts = new Map();   // lowercased → { tag (first spelling seen), count }
+  for (const r of all) for (const t of r.tags) {
+    const k = t.toLowerCase();
+    if (counts.has(k)) counts.get(k).count++; else counts.set(k, { tag: t, count: 1 });
+  }
+  const tags = [...counts.values()].sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  const names = tags.map(t => t.tag);
+  for (const t of tags) t.like = lookalikeTags(t.tag, names);
+  const words = String(query).toLowerCase().split(/\s+/).filter(Boolean);
+  const want = String(tag || "").toLowerCase();
+  const rows = all.filter(r => (!want ? true : want === UNTAGGED ? !r.tags.length : r.tags.some(t => t.toLowerCase() === want))
+      && words.every(w => `${r.code} ${r.name} ${r.status} ${r.tags.join(" ")}`.toLowerCase().includes(w)))
+    .sort((a, b) => (!a.code) - (!b.code) || b.code.localeCompare(a.code, "en", { numeric: true }));
+  return { rows, tags, total: all.length, untagged: all.filter(r => !r.tags.length).length };
+}
+
 /* The custom tag a row is marked with (the first, in the custom tags' order), or null. */
 export function customTagOf(fields, tagField, tags) {
   const mine = tagsOf((fields || {})[tagField]);
@@ -1795,3 +1850,61 @@ export function pmWrites(person, rules) {
   const v = person && person.id ? [{ id: person.id }] : null;
   return { universe: { [rules.pmSync.universe]: v }, andon: { [rules.pmSync.andon]: v } };
 }
+
+/* ======================= the CE: the same link in the Universe and ANDON ======================= */
+/* The link in a URL cell ({link, text}), or a text cell holding one; "" when blank. */
+export function linkIn(v) {
+  if (v && typeof v === "object" && !Array.isArray(v) && typeof v.link === "string") return v.link.trim();
+  return clean(v);
+}
+// Compared without a trailing slash: the same sheet, pasted twice.
+const sameLink = (a, b) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+
+/* A project in both the Universe and ANDON whose Universe CE (rules.ceSync.universe) and
+   ANDON CE (rules.ceSync.andon, in every ANDON row with its code) aren't the same link,
+   or where either is blank, gets an Audit card, like the PM's. The card suggests
+   ANDON's link, else the Universe's; with both blank, the person pastes it. A table
+   without its column (in `fields`) gives no cards. */
+export function ceCards(universe, andon, rules, { fields = {} } = {}) {
+  const cfg = rules.ceSync;
+  if (!cfg) return { cards: [] };
+  const has = (table, col) => !fields[table] || fields[table].some(f => f.field_name === col);
+  if (!has("universe", cfg.universe) || !has("andon", cfg.andon)) return { cards: [] };
+  const byCode = new Map();
+  for (const r of andon || []) {
+    const code = normCode(plain((r.fields || {})["Project Code"]));
+    if (code) byCode.set(code, [...(byCode.get(code) || []), r]);
+  }
+  const cards = [];
+  for (const row of universe || []) {
+    const f = row.fields || {};
+    const code = normCode(plain(f["Project Code"]));
+    const rows = code && byCode.get(code);
+    if (!rows) continue;
+    const uLink = linkIn(f[cfg.universe]);
+    const aLinks = rows.map(r => linkIn((r.fields || {})[cfg.andon]));
+    const blank = !uLink || aLinks.some(l => !l);
+    const differ = aLinks.some(l => !sameLink(l, uLink));
+    if (!blank && !differ) continue;
+    cards.push({
+      kind: "ce", id: `ce:${row.record_id}`, rowId: row.record_id, code,
+      name: clean(f["Project"]) || clean((rows[0].fields || {})["Project"]), status: clean(f["Status"]),
+      universeLink: uLink, andonLinks: aLinks, andonRows: rows.map(r => r.record_id), blank,
+      suggestion: aLinks.find(Boolean) || uLink,
+      loaded: { universe: { [cfg.universe]: f[cfg.universe] },
+                andon: Object.fromEntries(rows.map(r => [r.record_id, { [cfg.andon]: (r.fields || {})[cfg.andon] }])) },
+      submittedAt: null, notes: [], blocked: "",
+    });
+  }
+  cards.sort((a, b) => b.code.localeCompare(a.code, "en", { numeric: true }));
+  return { cards };
+}
+
+/* The cells a CE Fill writes: the one link in both tables (URL columns take {link, text}). */
+export function ceWrites(link, rules) {
+  const v = link ? { link, text: link } : null;
+  return { universe: { [rules.ceSync.universe]: v }, andon: { [rules.ceSync.andon]: v } };
+}
+
+/* A link a person typed: https only (so it opens), else "". */
+export const validLink = (s) => (/^https:\/\/[^\s/]+\.[^\s]+$/i.test(String(s || "").trim()) ? String(s).trim() : "");

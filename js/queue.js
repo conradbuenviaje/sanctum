@@ -21,7 +21,7 @@ const KEY = "polaris.queue";
 const PEEK_MAX = 5;
 const MIN_LOGIN_MS = 60000;           // the same minute every write needs (ensureTime)
 const WHERE = { universe: "Universe", collections: "Collections", andon: "ANDON" };
-const ROUTE = { brief: "#/universe", par: "#/universe", invoice: "#/invoices", andon: "#/andon", audit: "#/audit", approval: "#/andon", pm: "#/audit", files: "#/universe" };
+const ROUTE = { brief: "#/universe", par: "#/universe", invoice: "#/invoices", andon: "#/andon", audit: "#/audit", approval: "#/andon", pm: "#/audit", ce: "#/audit", files: "#/universe" };
 const EDIT_ROUTE = { universe: "#/universe", collections: "#/invoices", andon: "#/andon" };   // the tab its table sits beside
 const LISTED = ["running", "checking", "waiting"];
 
@@ -41,7 +41,7 @@ export function createQueue(ctx, inbox) {
   const findCard = (it) => {
     if (it.kind === "edit") return inbox.editCard(it.cardId);
     // (approval cards sit in the ANDON tab's list, file cards in the Universe tab's)
-    const list = (S.lists && S.lists[{ approval: "andon", pm: "audit", files: "universe" }[it.kind] || it.kind]) || { cards: [] };
+    const list = (S.lists && S.lists[{ approval: "andon", pm: "audit", ce: "audit", files: "universe" }[it.kind] || it.kind]) || { cards: [] };
     return [...list.cards, ...(list.tagged || []).flatMap(g => g.cards)]
       .find(c => c.id === it.cardId && (c.step || "") === (it.step || ""));
   };

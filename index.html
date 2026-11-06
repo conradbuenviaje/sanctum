@@ -67,7 +67,7 @@
     (function () {
       var v = window.APP_BUILD = Date.now().toString(36);
       var files = ["js/config.js", "js/sync.js", "js/ops.js", "js/icons.js", "js/ui.js", "js/polaris-ui.js", "js/errors.js",
-                   "js/service.js", "js/settings.js", "js/net.js", "js/session.js", "js/auth.js", "js/inbox.js", "js/universe.js", "js/collections.js", "js/andon.js", "js/sources.js", "js/queue.js", "js/rowdoc.js", "js/app.js"];
+                   "js/service.js", "js/settings.js", "js/net.js", "js/session.js", "js/auth.js", "js/inbox.js", "js/universe.js", "js/collections.js", "js/andon.js", "js/sources.js", "js/queue.js", "js/rowdoc.js", "js/tagging.js", "js/app.js"];
       var map = { imports: {} };
       files.forEach(function (f) { map.imports[new URL(f, location.href).href] = new URL(f + "?v=" + v, location.href).href; });
       document.write('<link rel="stylesheet" href="css/theme.css?v=' + v + '">');
@@ -95,6 +95,7 @@
     <div class="top-right">
       <a class="override-badge" id="overrideBadge" href="#/settings" hidden>Overridden</a>
       <nav class="nav" aria-label="Main">
+        <a href="#/tagging" data-nav="tagging" id="tagLink" title="Every Universe project and its tags" hidden>Tagging</a>
         <a href="#/universe" data-nav="work" id="workLink" hidden>Data Audit</a>
         <!-- Pushes waiting for Lark; hovering shows the next five (js/queue.js). -->
         <div class="queue-wrap">
@@ -281,6 +282,29 @@
         </div>
         <p class="uni-foot" id="srcFoot"></p>
       </section>
+    </section>
+
+    <!-- Tagging: every Universe project and its tags (js/tagging.js) ----------->
+    <section class="view view-tagging" data-view="tagging" aria-labelledby="tagTitle">
+      <div class="page-head">
+        <div>
+          <h1 id="tagTitle">Tagging</h1>
+          <p class="lede sm" id="tagSub"></p>
+        </div>
+        <div class="page-tools">
+          <label class="search search-sm">
+            <span class="i" data-icon="search" aria-hidden="true"></span>
+            <span class="sr-only">Search the projects and tags</span>
+            <input type="search" id="tagSearch" placeholder="Search code, project, status, tag…" autocomplete="off" spellcheck="false">
+          </label>
+        </div>
+      </div>
+      <div class="tag-summary" id="tagSummary" aria-label="Tags in use"></div>
+      <div class="tbl-wrap tag-wrap">
+        <table class="tbl uni tagging" id="tagTable"></table>
+        <div class="loader" id="tagLoader" hidden></div>
+        <div class="empty small" id="tagEmpty" hidden></div>
+      </div>
     </section>
 
     <!-- Queue: pushes waiting for Lark, failed and finished --------------------->

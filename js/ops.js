@@ -59,6 +59,8 @@ export function schemaSpec(rules) {
              "MKT", "VAT%", "Project Description", "Project Start", "Project End",
              // …and the PM, which must match ANDON's PM (LEAD) (the PM audit)
              rules.pmSync.universe,
+             // …and the CE link, which must match ANDON's (the CE audit)
+             rules.ceSync.universe,
              // …and the rest a push writes, so the push sheet can show the whole row
              "Mancom Phase", "Other Links",
              // …and what the team notes on a project, shown in the push sheet's row (read only)
@@ -95,6 +97,8 @@ export function schemaSpec(rules) {
                   "audit:universe": [...rules.auditRequired.fields, ...rules.auditLost.fields, rules.auditFiles.field],
                   // the brief's files are uploaded into this one
                   files: [rules.briefFiles.to],
+                  // the CE audit's Fill writes the link here (and in ANDON)
+                  ce: [rules.ceSync.universe],
                   // without a Tags column, only "Mark as …" stops (Hide on this device still works)
                   ...(tagsIn("universe") ? { "tag:universe": [rules.tags.field] } : {}) },
     },
@@ -134,7 +138,9 @@ export function schemaSpec(rules) {
         "Business Unit": T.select, "Tools": T.multi, "TRIBE": T.select, "Event Start": T.date, "Event End": T.date,
       },
       // Custom tags, only if rules.tags.tables lists ANDON (it doesn't: no Tags column there).
-      ...(tagsIn("andon") ? { optional: { [rules.tags.field]: T.text }, neededBy: { "tag:andon": [rules.tags.field] } } : {}),
+      ...(tagsIn("andon") ? { optional: { [rules.tags.field]: T.text } } : {}),
+      // The CE audit's Fill writes the link here (and in the Universe).
+      neededBy: { ce: [rules.ceSync.andon], ...(tagsIn("andon") ? { "tag:andon": [rules.tags.field] } : {}) },
     },
     variables: {
       // Settings the team keeps in Lark, one row per value (RULES.tags). Every column is
@@ -505,7 +511,7 @@ export async function saveEdit(call, t, recordId, write, loaded, defs) {
    remaining row is written and read back.
    Resolves { recordId (the first row), written (the first row's write), results:
    [{ table, recordId, written, mismatches, readBackError }], mismatches, readBackError }. */
-export async function syncPm(call, tables, rows, writes, defsOf) {
+export async function syncPm(call, tables, rows, writes, defsOf, doneMessage = "Both already have that PM.") {
   const todo = [];
   for (const r of rows) {
     const now = await findRecord(call, tables[r.table], r.rowId);
@@ -514,7 +520,7 @@ export async function syncPm(call, tables, rows, writes, defsOf) {
     if (stale.length) throw new EditConflict(stale.map(k => `${TABLE_TITLES[r.table]}'s ${k}`));
     if (!done) todo.push(r);
   }
-  if (!todo.length) throw new AlreadyDone("Both already have that PM.");
+  if (!todo.length) throw new AlreadyDone(doneMessage);
   const results = [];
   for (const r of todo) {
     const t = tables[r.table], written = writes[r.table];

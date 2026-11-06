@@ -9,6 +9,26 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 1.13.0 · Nov 6, 2026
+
+- **New:** the audit checks the CE link. A project's **Internal CE (Sheet)** in the
+  Universe and **Working CE** in ANDON must be the same link. If they differ, or either
+  is blank, the Audit tab shows a card with both; **Fill** puts one link in both tables
+  (ANDON's is suggested; with both blank, paste it).
+- **New:** a **Tagging** page, in the top bar before *Data Audit*. Every Universe project and its tags, with the tags in use
+  and how many projects have each (a click shows only those). Add a tag with **+** (the
+  tags in use are suggested) or take one off with **×**; it's saved at once. Tags that
+  look misspelt (*Federal Lnad* next to *Federal Land*) are marked, and a new tag that
+  looks like one in use asks first.
+
+## 1.12.1 · Nov 6, 2026
+
+- **Changed:** clicking a row in the ANDON table shows it at once, from what's already
+  loaded, instead of waiting for Lark. Polaris still reads the row fresh in the
+  background and updates it if Lark has something newer (what you've typed stays); Push
+  waits for that read. Universe and Collections rows still load first, since their
+  tables don't list every column.
+
 ## 1.12.0 · Nov 6, 2026
 
 - **Changed:** a backup connection service. The Lark connection service now runs in two

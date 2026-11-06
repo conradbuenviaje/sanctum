@@ -7,7 +7,7 @@ import { parseBaseLink, loadEverything, selectOptions, TABLE_TITLES, computedTyp
 import {
   indexUniverse, indexCollections, briefCards, parCards, collectionCards, stepStatus, peoplePool, pmPool, auditCards, briefsByCode,
   draftsToJSON, draftsFromJSON, variableColumns, customTagsFrom, tagGroups, tagsOf, filterIndex, cardFacets, passesFilters,
-  approvalCards, pmCards, fileCards, attachmentRequest, attachmentLinkRequest, attachmentLink,
+  approvalCards, pmCards, ceCards, fileCards, attachmentRequest, attachmentLinkRequest, attachmentLink,
 } from "./sync.js";
 import { $, $$, h, ic, fillIcons, toast, fmt, store, recall, sleep, initTheme, openMenu, confirmSheet, busy } from "./ui.js";
 import { lark, wake, conn, onConn, describe, isDeadToken, LarkError, proxyHost, proxyHosts, unreachable, downloadFromBase } from "./net.js";
@@ -19,6 +19,7 @@ import { createCollections } from "./collections.js";
 import { createAndon } from "./andon.js";
 import { createSources, SOURCE_KINDS } from "./sources.js";
 import { createQueue } from "./queue.js";
+import { createTagging } from "./tagging.js";
 
 const tables = Object.fromEntries(Object.entries(TABLE_LINKS).map(([k, link]) => [k, parseBaseLink(link)]));
 const KEY = { theme: "polaris.theme", tab: "polaris.tab", draft: "polaris.draft" };
@@ -98,6 +99,7 @@ const TABLES_FOR = {
   universe: ["brief", "par", "universe"],   // the Universe tab: briefs and PARs
   approval: ["par", "andon"],   // a PAR's Request No. into ANDON's Approval
   pm: ["universe", "andon"],    // one PM in both
+  ce: ["universe", "andon"],    // one CE link in both
   files: ["brief", "universe"], // the brief's files, uploaded by hand, into the Universe's Other Attachments
   // The audit fills Universe or ANDON cells from the brief: each card checks its own table.
   audit: ["brief", "universe"], "audit:universe": ["brief", "universe"], "audit:andon": ["brief", "andon"],
@@ -182,6 +184,7 @@ const universe = createUniverse(ctx);
 const collections = createCollections(ctx);
 const andon = createAndon(ctx);
 const sources = createSources(ctx);
+const tagging = createTagging(ctx);   // the Tagging page: every Universe project's tags
 const queue = ctx.queue = createQueue(ctx, inbox);   // Push hands its write to the queue
 
 /* ======================= the pane switcher =======================
@@ -222,7 +225,7 @@ for (const btn of $$(".pane-switch")) {
 /* ======================= routes ======================= */
 // #/briefs and #/pars (the tabs before 1.9.0) open the Universe tab, so old links still work.
 const ROUTES = { "": "universe", universe: "universe", briefs: "universe", pars: "universe", invoices: "invoice", andon: "andon",
-                 audit: "audit", collections: "invoice", settings: "settings", queue: "queue" };
+                 audit: "audit", tagging: "tagging", collections: "invoice", settings: "settings", queue: "queue" };
 const parseRoute = () => ROUTES[(location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ""] || "universe";
 
 function onRoute() {
@@ -232,8 +235,8 @@ function onRoute() {
     S.view = "login";
     S.returnTo = location.hash || "#/universe";
   } else {
-    if (r === "queue") {
-      S.view = "queue";
+    if (r === "queue" || r === "tagging") {
+      S.view = r;
       render();
       if (!S.data && !S.loading && !S.loadError) loadData();
       window.scrollTo(0, 0);
@@ -254,7 +257,7 @@ function onRoute() {
 /* ======================= rendering ======================= */
 const TAB_TITLES = { universe: "Universe", invoice: "Invoices", andon: "ANDON", audit: "Audit" };
 function pageTitle() {
-  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue" }[S.view] || TAB_TITLES[S.tab];
+  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", tagging: "Tagging" }[S.view] || TAB_TITLES[S.tab];
   return `${name} · ${APP.name}`;
 }
 
@@ -292,6 +295,7 @@ function render() {
     sources.render(side);   // (only if the pane shows a source table)
   }
   if (S.view === "settings") renderSettings();
+  if (S.view === "tagging") tagging.render();
   queue.paint();      // the Queue tab, its peek and the queue page
 }
 
@@ -311,6 +315,7 @@ function renderHeader() {
   $("#sessionPill").hidden = !signedIn;
   $("#meLink").hidden = !signedIn;
   $("#workLink").hidden = !signedIn;
+  $("#tagLink").hidden = !signedIn;
   for (const a of $$(".nav a")) {
     if (a.dataset.nav === S.view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -420,6 +425,7 @@ async function loadData({ quiet = false } = {}) {
       collections.renderLoader();
       andon.renderLoader();
       sources.renderLoader();
+      if (S.view === "tagging") tagging.render();
     });
     S.data = res.data;
     S.fields = res.fields;
@@ -484,8 +490,10 @@ function recompute() {
     : { cards: [], tagged: [], hidden: { noBrief: 0, hidden: 0 } };
   // …and projects whose PM isn't the same in the Universe and ANDON (or is blank in either).
   const pm = d.andon ? pmCards(d.universe, d.andon, RULES, { fields: { universe: fieldsOf("universe"), andon: fieldsOf("andon") } }) : { cards: [] };
+  // …and projects whose CE link isn't the same in both (or is blank in either).
+  const ce = d.andon ? ceCards(d.universe, d.andon, RULES, { fields: { universe: fieldsOf("universe"), andon: fieldsOf("andon") } }) : { cards: [] };
   S.lists.audit = {
-    cards: [...uniAudit.cards, ...andonAudit.cards].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0)).concat(pm.cards),
+    cards: [...uniAudit.cards, ...andonAudit.cards].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0)).concat(pm.cards, ce.cards),
     tagged: tagGroups([...uniAudit.tagged, ...andonAudit.tagged], S.customTags.map(x => x.tag)),
     hidden: { hiddenHere: uniAudit.hidden.hidden + andonAudit.hidden.hidden },
   };
@@ -509,14 +517,15 @@ function afterPush(c, res, payload, extra = {}) {
   const d = S.data;
   if (c.kind === "audit") return afterFill(c, res);
   if (c.kind === "edit") return afterEdit(c, res, extra);
-  if (c.kind === "pm") {                // one PM, set in the Universe and ANDON
+  if (c.kind === "pm" || c.kind === "ce") {   // one PM (or CE link), set in the Universe and ANDON
     for (const r of res.results) {
       const rec = (d[r.table] || []).find(x => x.record_id === r.recordId);
       if (rec) Object.assign(rec.fields, r.written);
     }
     recompute();
     render();
-    const title = `${c.code}'s PM is now ${extra.pmName || "set"} in the Universe and ANDON.`;
+    const title = c.kind === "ce" ? `${c.code}'s CE link is now the same in the Universe and ANDON.`
+      : `${c.code}'s PM is now ${extra.pmName || "set"} in the Universe and ANDON.`;
     if (res.readBackError || (res.mismatches && res.mismatches.length)) {
       const list = res.mismatches && res.mismatches.length
         ? res.mismatches.map(m => `${m.field}: sent “${m.want}”, Lark has “${m.got}”`).join("; ") : describe(res.readBackError);
