@@ -9,13 +9,16 @@
 
 /* version: bump it with every release and add an entry to CHANGELOG.md (newest first, same number).
    The top bar shows it beside the name, so people can see at a glance which version they're running. */
-export const APP = { name: "Polaris", key: "polaris", version: "1.11.0", env: "live" };   // env: "live" | "test"
+export const APP = { name: "Polaris", key: "polaris", version: "1.12.0", env: "live" };   // env: "live" | "test"
 export const ENV_LABEL = APP.env === "test" ? "Test copy" : "";         // shown in the header, never a gate
 
 /* The connection service: the shared Lark proxy (Render). `service` is the name its
    GET / answers with; `min` and `headers` are checked once it reports a version. */
 export const SERVICES = {
-  lark: { url: "https://lark-proxy-dwiw.onrender.com", service: "lark-cors-proxy", min: "1.0.0", headers: ["Authorization"] },
+  // The Lark proxy (tech/lark-proxy) runs in two places, tried in this order: Cloudflare Workers
+  // (never sleeps), then Render (the backup). Both must be in index.html's connect-src.
+  lark: { urls: ["https://lark-proxy.stephen-lin.workers.dev", "https://lark-proxy-dwiw.onrender.com"],
+          service: "lark-cors-proxy", min: "2.0.0", headers: ["Authorization"] },
 };
 
 export const LARK = {

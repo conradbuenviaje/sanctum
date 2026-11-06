@@ -201,12 +201,14 @@ export async function loadUser() {
 }
 
 /* Is this page's address a registered redirect URL? Lark's authorize page
-   answers an unregistered one with an error page carrying "code":20029.
-   Resolves null when fine (or when it can't tell), else a sentence. */
+   answers an unregistered one with an error page carrying "code":20029. Waits
+   for the proxy first (and so asks the one that answered). Resolves null when
+   fine (or when it can't tell), else a sentence. */
 export async function redirectProblem() {
   if (!/^https?:$/.test(location.protocol)) {
     return "This page is open as a file, so Lark can't send you back to it. Open it from its web address.";
   }
+  if (!await wake()) return null;   // can't tell; the login button still works
   const probe = `${LARK.api}/authen/v1/authorize?client_id=${encodeURIComponent(APP_ID)}` +
                 `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&scope=${encodeURIComponent(SCOPES)}`;
   try {

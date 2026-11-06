@@ -46,7 +46,7 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <!-- Where this page may send data: itself and the hosted connection service (a local
        address too, for testing on this computer). A login token can't go anywhere else. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://lark-proxy-dwiw.onrender.com http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://lark-proxy.stephen-lin.workers.dev https://lark-proxy-dwiw.onrender.com http://127.0.0.1:* http://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self'">
   <title>Polaris · Mineski</title>
   <meta name="description" content="Polaris moves new Project Briefs, PARs and invoices into the Universe.">
   <meta name="theme-color" content="#F5F6FA" media="(prefers-color-scheme: light)">
@@ -118,7 +118,7 @@
       <span class="i" data-icon="alert" aria-hidden="true"></span>
       <div>
         <p><b>Polaris can't reach its connection service.</b> An ad blocker or privacy extension is probably blocking it.</p>
-        <p>Allow <code id="blockHost">lark-proxy-dwiw.onrender.com</code> in your blocker (or pause it on this page), then reload.</p>
+        <p>Allow <code id="blockHost">lark-proxy.stephen-lin.workers.dev</code> in your blocker (or pause it on this page), then reload.</p>
       </div>
       <button type="button" class="btn btn-sm" id="reloadBtn">Reload</button>
     </div>

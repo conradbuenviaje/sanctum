@@ -579,7 +579,8 @@ Polaris doesn't keep a copy of the tables: every load reads them fresh from Lark
  Your browser: a static page (GitHub Pages, no build step, ES modules)
    │  every Lark call carries YOUR login (Authorization: Bearer), so Lark applies your own permissions
    ▼
- Connection service = the shared Lark proxy (Render)  ──▶  Lark Open API (open.larksuite.com)
+ Connection service = the shared Lark proxy  ──▶  Lark Open API (open.larksuite.com)
+   on Cloudflare (used first, never sleeps) and Render (the backup), same code and settings;
    adds the app secret ONLY to the login code exchange
  Lark Base is the database. There is no other server and no other database.
 ```
@@ -640,8 +641,10 @@ Lark app `cli_aab0716138b8ded3` (always `127.0.0.1`, never `localhost`: another
 address needs registering too). `tools/serve.py` turns caching off and serves `.js`
 as JavaScript (some Windows machines serve it as text, and module scripts then
 refuse to run); plain `python -m http.server` does neither. The connection service
-(the Lark proxy on Render) sleeps when idle, so the first load can take up to a
-minute; Polaris says so while it waits.
+(the Lark proxy) runs on Cloudflare, which never sleeps, with a copy on Render as the
+backup. If the Cloudflare one can't be reached Polaris moves to Render (reads at once;
+pushes only before they're sent, never twice), and then the first load can take up to a
+minute while Render wakes up; Polaris says so while it waits.
 
 ---
 
@@ -805,7 +808,8 @@ the live tables.
 | *Polaris couldn't start.* | Reload. If it keeps happening, open Polaris from its web address (not a saved file). If you just deployed, a file is probably missing or not listed in the import map in `index.html`: run `npm run check:shell`. |
 | People report an old version (the number beside "Polaris" in the top bar is lower than the newest entry in `CHANGELOG.md`) | The page and every script are fetched fresh on each visit, so this is almost always the host's own cache (GitHub Pages can take a few minutes after a push) or an old tab left open. Reload the tab; in the browser console, `APP_BUILD` changes on each load. Check the files on the host are the new ones. |
 | *Waking up the connection… This can take up to a minute.* | Nothing; the free Render service is starting. It retries for up to 3 minutes. |
-| *Polaris can't reach its connection service.* (red box, mentions an ad blocker) | Allow `lark-proxy-dwiw.onrender.com` in your ad blocker or privacy extension (or pause it on this page), then **Reload**. |
+| *Polaris can't reach its connection service.* (red box, mentions an ad blocker) | Allow `lark-proxy.stephen-lin.workers.dev` (and `lark-proxy-dwiw.onrender.com`, the backup) in your ad blocker or privacy extension (or pause it on this page), then **Reload**. |
+| Settings > Connections: "… (the backup: the usual one can't be reached)" | The connection service on Cloudflare didn't answer, so Polaris is using the copy on Render. Everything works; the first call after a while may wait for Render to wake up. If it lasts, check the Worker on Cloudflare (its Logs say why). |
 | *Polaris can't reach its connection service (…). It may still be waking up* | Try again in a moment. If it stays, check `npm run check:proxy` or ask the admin. |
 | *Out of date (…). Ask the admin to redeploy it.* (Settings > Connections) | The connection service is older than this page needs (`SERVICES.lark.min` in `js/config.js`). The admin redeploys it; see its README. |
 | *This address (…) isn't registered on the Lark app* on the login screen | Add that exact address under *Security Settings > Redirect URLs* for the app. |

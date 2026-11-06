@@ -10,7 +10,7 @@ import {
   approvalCards, pmCards, fileCards, attachmentRequest, attachmentLinkRequest, attachmentLink,
 } from "./sync.js";
 import { $, $$, h, ic, fillIcons, toast, fmt, store, recall, sleep, initTheme, openMenu, confirmSheet, busy } from "./ui.js";
-import { lark, wake, conn, onConn, describe, isDeadToken, LarkError, proxyHost, unreachable, downloadFromBase } from "./net.js";
+import { lark, wake, conn, onConn, describe, isDeadToken, LarkError, proxyHost, proxyHosts, unreachable, downloadFromBase } from "./net.js";
 import { overrides, setLarkUrl, savedLarkUrl, isLocalPage, isServiceUrl } from "./settings.js";
 import * as auth from "./auth.js";
 import { createInbox } from "./inbox.js";
@@ -680,7 +680,8 @@ function renderSettings() {
     : ["", t ? "Not loaded yet" : "Log in to connect"];
   $("#connList").replaceChildren(
     h("li", null, h("span", { class: `dot ${proxyState[0]}` }),
-      h("span", { class: "status-text" }, h("b", null, "Connection service"), h("span", null, `${proxyState[1]} · ${proxyHost()}`)),
+      h("span", { class: "status-text" }, h("b", null, "Connection service"),
+        h("span", null, `${proxyState[1]} · ${proxyHost()}${conn.backup ? " (the backup: the usual one can't be reached)" : ""}`)),
       h("button", { type: "button", class: "btn btn-sm", onclick: () => { conn.checkedAt = 0; wake().then(renderSettings); renderSettings(); } },
         conn.proxy === "down" || conn.proxy === "outdated" ? "Try again" : "Wake up")),
     h("li", null, h("span", { class: `dot ${larkState[0]}` }),
@@ -696,7 +697,7 @@ function renderSettings() {
   $("#advanced").hidden = !isLocalPage();
   const input = $("#proxyInput");
   if (document.activeElement !== input) input.value = savedLarkUrl();
-  input.placeholder = SERVICES.lark.url;
+  input.placeholder = SERVICES.lark.urls[0];
   renderTags();
 }
 
@@ -870,7 +871,7 @@ $("#proxyReset").addEventListener("click", () => {
 });
 onConn(() => {
   $("#blockNote").hidden = !conn.blocked;
-  $("#blockHost").textContent = proxyHost();
+  $("#blockHost").textContent = conn.blocked ? proxyHosts().join(" and ") : proxyHost();
   if (S.view === "settings") renderSettings();
   if (S.view === "busy") {
     $("#busyMsg").textContent = conn.proxy === "waking"

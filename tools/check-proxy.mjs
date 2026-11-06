@@ -59,7 +59,9 @@ export async function checkProxy(base, expect = SERVICES.lark, say = console.log
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const i = process.argv.indexOf("--url");
-  const failures = await checkProxy(i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : SERVICES.lark.url);
+  const bases = i >= 0 && process.argv[i + 1] ? [process.argv[i + 1]] : SERVICES.lark.urls;   // every address, in order
+  let failures = 0;
+  for (const base of bases) failures += await checkProxy(base);
   console.log(failures ? "\nThe connection service needs attention." : "\nThe connection service looks fine ✓");
   process.exitCode = failures ? 1 : 0;
 }
