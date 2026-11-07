@@ -15,7 +15,7 @@ import {
   tagsOf, tagsWith, tagsWithout, variableColumns, customTagsFrom, customTagOf, tagGroups,
   isLostProject, requiredMessage, sourceView, statusChange,
   filterIndex, cardFacets, passesFilters, filterChoices, NONE, closestMatches,
-  ceCards, ceWrites, linkIn, validLink, lookalikeTags, taggingView, UNTAGGED,
+  ceCards, ceWrites, linkIn, validLink, lookalikeTags, taggingView, UNTAGGED, pickTag,
 } from "../js/sync.js";
 import { writableOnly } from "../js/ops.js";
 
@@ -1319,4 +1319,15 @@ test("Tagging: every project and its tags, tag counts, filters, and tags that lo
   assert.deepEqual(lookalikeTags("federal-land", ["Federal Land", "Event"]), ["Federal Land"]);
   assert.deepEqual(lookalikeTags("Evnt", ["Event", "Booth"]), ["Event"]);
   assert.deepEqual(lookalikeTags("Expo", ["Event", "Booth"]), []);
+});
+
+test("pickTag: a custom tag in any case, a new tag spelled as used, lookalikes, bad input", () => {
+  const custom = ["No Revenue", "Hidden"], inUse = ["Event", "Federal Land", "No Revenue"];
+  assert.deepEqual(pickTag("  no   revenue ", custom, inUse), { tag: "No Revenue", isNew: false, like: [] });
+  assert.deepEqual(pickTag("event", custom, inUse), { tag: "Event", isNew: true, like: [] });
+  assert.deepEqual(pickTag("Federal Lnad", custom, inUse), { tag: "Federal Lnad", isNew: true, like: ["Federal Land"] });
+  assert.deepEqual(pickTag("Hiden", custom, inUse).like, ["Hidden"]);
+  assert.deepEqual(pickTag("On Hold", custom, inUse), { tag: "On Hold", isNew: true, like: [] });
+  assert.ok(pickTag("   ", custom, inUse).error);
+  assert.ok(pickTag("A, B", custom, inUse).error);
 });

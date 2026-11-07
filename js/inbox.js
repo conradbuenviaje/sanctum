@@ -7,10 +7,10 @@ import { TABLE_TITLES, pushBrief, pushPar, pushCollections, pushAndon, setIgnore
 import {
   universeFromBrief, collectionsChange, stepStatus, parAfterAdding, defaultVat, vatMentions,
   people, plain, pmWrites, ceWrites, validLink, andonFromBrief, auditPatch, auditMissing, auditFilesMissing, monthOf, clean, editChanges, editWrite,
-  tagsWith, tagsWithout, requiredMessage, FILTER_KEYS, NONE, passesFilters, filterChoices, closestMatches,
+  tagsWith, tagsWithout, tagsOf, pickTag, requiredMessage, FILTER_KEYS, NONE, passesFilters, filterChoices, closestMatches,
 } from "./sync.js";
 import { uploadSizeProblem } from "./errors.js";
-import { $, h, ic, toast, fmt, flash, copyable, store, collapse, busy, radioKeys, openMenu } from "./ui.js";
+import { $, h, ic, toast, fmt, flash, copyable, store, collapse, busy, radioKeys, openMenu, confirmSheet } from "./ui.js";
 import { copyableText, dateField } from "./polaris-ui.js";
 import { createRowDoc } from "./rowdoc.js";
 import { describe, isDeadToken, isUncertain, uploadToBase } from "./net.js";
@@ -568,11 +568,66 @@ export function createInbox(ctx) {
       items.push({ label: "Why no “Mark as …”?", icon: "info", onSelect: () => toast(`Marking needs a “${RULES.tags.field}” column in ${AUDIT_WHERE[c.target]}.`,
         { detail: ctx.problemsFor(`tag:${c.target}`)[0] || "Your login can only read the tables. Log in again to allow it.", timeout: 0 }) });
     }
-    if (!S.customTags.length) {
+    if (canTag) items.push({ label: "Mark as another tag…", icon: "plus", onSelect: () => otherTag(c, btn) });
+    else if (!S.customTags.length) {
       items.push({ label: "Add custom tags in Settings", icon: "gear", onSelect: () => { location.hash = "#/settings"; } });
     }
     items.push("-", { label: "Hide on this device", icon: "eye", onSelect: () => hideAudit(c, true, btn) });
     openMenu(items, { anchor: btn });
+  }
+
+  /* Hide > "Mark as another tag…": type any tag (the custom tags and the tags in use are
+     suggested). A tag that isn't a custom tag yet is added to Settings > Custom tags
+     first (for everyone), so the card moves to its group like the others. One that
+     looks like a misspelling of a tag in use asks first. */
+  async function otherTag(c, btn) {
+    const custom = S.customTags.map(t => t.tag);
+    const inUse = [];
+    for (const t of RULES.tags.tables) for (const r of S.data[t] || []) for (const x of tagsOf((r.fields || {})[RULES.tags.field])) {
+      if (!inUse.some(y => y.toLowerCase() === x.toLowerCase())) inUse.push(x);
+    }
+    inUse.sort((a, b) => a.localeCompare(b));
+    const mine = tagsOf(auditRow(c).fields[RULES.tags.field]);
+    const offer = [...custom, ...inUse.filter(t => !custom.some(x => x.toLowerCase() === t.toLowerCase()))]
+      .filter(t => !mine.some(x => x.toLowerCase() === t.toLowerCase()));
+    const input = h("input", { type: "text", list: "otherTagList", autocomplete: "off", maxlength: "60", placeholder: "e.g. On Hold",
+      "aria-label": "Tag" });
+    const hint = h("p", { class: "set-sub" });
+    const picks = h("div", { class: "ce-picks" });
+    let okLike = "";   // the lookalike warning was shown for this spelling: Mark again keeps it
+    let chosen = null;
+    const paintHint = () => {
+      const p = pickTag(input.value, custom, inUse);
+      hint.textContent = p.error || !p.tag ? "" : p.isNew
+        ? `“${p.tag}” isn't a custom tag yet: it's added to Settings > Custom tags (for everyone), then ${c.code} is marked with it.`
+        : `${c.code} moves to the “${p.tag}” group at the bottom of the list.`;
+    };
+    input.addEventListener("input", () => { picks.replaceChildren(); paintHint(); });
+    setTimeout(() => input.focus(), 0);   // (the sheet focuses Cancel; typing is the point here)
+    const ok = await confirmSheet({
+      title: `Mark ${c.code || "this project"} with a tag`, icon: "pin", confirm: "Mark", busyText: "Adding the tag…",
+      sub: "The card leaves the audit list for everyone and shows in that tag's group at the bottom.",
+      body: h("div", null, h("label", { class: "sr-only" }, "Tag"), input,
+        h("datalist", { id: "otherTagList" }, offer.map(t => h("option", { value: t }))), hint, picks),
+      run: async () => {
+        const p = pickTag(input.value, custom, inUse);
+        if (p.error) throw new Error(p.error);
+        if (p.isNew && p.like.length && okLike !== p.tag) {
+          okLike = p.tag;
+          picks.replaceChildren(...p.like.map(t => h("button", { type: "button", class: "btn btn-sm",
+            onclick: () => { input.value = t; picks.replaceChildren(); paintHint(); input.focus(); } }, `Use “${t}”`)));
+          throw new Error(`“${p.tag}” looks like ${p.like.map(t => `“${t}”`).join(" or ")}. Pick one below, or Mark again to add “${p.tag}” as a new tag.`);
+        }
+        if (p.isNew) {
+          if (!ctx.canAddCustomTag()) throw new Error(`“${p.tag}” isn't a custom tag yet, and your login can't add one (${ctx.problemsFor("variables")[0] || "it can only read the Variables table"}). Pick a custom tag, or add it in Settings first.`);
+          if (!ctx.ensureTime()) throw new Error("Your login is about to end. Log in again, then try it.");
+          try { await ctx.addCustomTag(p.tag); }
+          catch (e) { throw new Error(isDeadToken(e) ? "Your login has ended. Log in again, then try it." : `Couldn't add “${p.tag}” as a custom tag: ${describe(e)}`); }
+        }
+        chosen = p.tag;
+      },
+    });
+    if (ok && chosen) markTag(c, chosen, true, btn && btn.isConnected ? btn : null);
   }
 
   /* The tag groups at the bottom of the audit list: one per custom tag, folded until

@@ -753,6 +753,16 @@ function renderTags() {
     canWrite ? null : h("p", { class: "set-sub" }, problemsFor("variables")[0] || "Your login can only read the tables. Log in again to change the tags.")].filter(Boolean));
 }
 
+/* Write one new custom tag (a Variables row) and add it to the list. Also used by an
+   audit card's Hide > "Mark as another tag…" (ctx.addCustomTag). */
+async function createCustomTag(tag) {
+  const rec = await track(() => addVariable(call, tables.variables, S.tagCols, RULES.tags.variable, tag));
+  S.data.variables.push({ record_id: rec.record_id, fields: { ...rec.fields, [S.tagCols.name]: RULES.tags.variable, [S.tagCols.value]: tag } });
+  recompute();
+}
+ctx.addCustomTag = createCustomTag;
+ctx.canAddCustomTag = () => !!S.tagCols && canWriteFor("variables");
+
 async function addTag(raw, err, btn) {
   const tag = String(raw || "").replace(/\s+/g, " ").trim();
   const say = (m) => { err.textContent = m; err.hidden = !m; };
@@ -764,9 +774,7 @@ async function addTag(raw, err, btn) {
   tagBusy = true;
   busy(btn, true, "Adding…");
   try {
-    const rec = await track(() => addVariable(call, tables.variables, S.tagCols, RULES.tags.variable, tag));
-    S.data.variables.push({ record_id: rec.record_id, fields: { ...rec.fields, [S.tagCols.name]: RULES.tags.variable, [S.tagCols.value]: tag } });
-    recompute();
+    await createCustomTag(tag);
     const field = $("#tagNew");
     if (field) field.value = "";
     toast(`Added “${tag}”.`, { type: "success", detail: `Audit cards now offer “Mark as ${tag}” under Hide.` });

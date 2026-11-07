@@ -759,6 +759,24 @@ export function lookalikeTags(tag, known) {
     .filter(t => { const o = tagKey(t); return o === k || (room && Math.abs(o.length - k.length) <= room && editDistance(o, k) <= room); });
 }
 
+/* A tag typed under an audit card's Hide > "Mark as another tag…": { tag, isNew, like }
+   or { error }. `custom` = the custom tags, `inUse` = the tags already in Tags cells.
+   A custom tag typed in any case is that tag (isNew false). Otherwise it becomes a new
+   custom tag, spelled as it's already used if it is ("event" → "Event"); `like` = the
+   tags it looks like a misspelling of, to ask about first. */
+export function pickTag(raw, custom = [], inUse = []) {
+  const typed = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!typed) return { error: "Type the tag first." };
+  if (/[,;]/.test(typed)) return { error: "A tag can't have a comma or semicolon in it: the Tags column uses them to separate tags." };
+  const same = (list) => list.find(t => String(t).toLowerCase() === typed.toLowerCase());
+  const hit = same(custom);
+  if (hit) return { tag: hit, isNew: false, like: [] };
+  const tag = same(inUse) || typed;
+  const all = [];
+  for (const t of [...custom, ...inUse]) if (!all.some(x => x.toLowerCase() === String(t).toLowerCase())) all.push(String(t));
+  return { tag, isNew: true, like: lookalikeTags(tag, all) };
+}
+
 /* Every Universe project and its tags, Project Code Z-A (newest first). `query`
    searches the code, name, status and tags; `tag` keeps the projects with that tag
    ("" none: every project; null-like "(none)": the untagged). Also every tag in use,

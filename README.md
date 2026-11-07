@@ -409,6 +409,12 @@ creates it).
     **bottom of the list** (folded; click to open). The tag is added to whatever the
     cell says in Lark at that moment, so other tags in it stay. It's instant, with
     **Undo**; if Lark refuses, the card moves back and the message says why.
+  - **Mark as another tag…**: type any tag (the custom tags and the tags in use are
+    suggested; a custom tag typed in any case is that tag). One that isn't a custom tag
+    yet is added to Settings > Custom tags first (for everyone; it needs write access to
+    the Variables table), then the card is marked with it like the others. A tag that
+    looks like a misspelling of one in use (*Federal Lnad*) offers that one first;
+    **Mark** again keeps the new spelling.
   - **Hide on this device**: as before, nothing is written to Lark, and the card
     comes back if another cell of that row goes blank.
 

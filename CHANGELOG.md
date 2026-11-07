@@ -20,6 +20,9 @@ two numbers differ.
   tags in use are suggested) or take one off with **×**; it's saved at once. Tags that
   look misspelt (*Federal Lnad* next to *Federal Land*) are marked, and a new tag that
   looks like one in use asks first.
+- **New:** an audit card's **Hide ▾** has **Mark as another tag…**: type any tag. If it
+  isn't a custom tag yet, it's added to Settings > Custom tags (for everyone), and the
+  card moves to that tag's group like the others. A tag that looks misspelt asks first.
 
 ## 1.12.1 · Nov 6, 2026
 
