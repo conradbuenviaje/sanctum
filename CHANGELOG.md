@@ -9,6 +9,15 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.6.1 · Nov 9, 2026
+
+- **The connection service moved to Cloudflare** (from Polaris 1.12.0). Sanctum now uses the Lark
+  proxy on Cloudflare first (it never sleeps, so no more "Waking up…") and the one on Render only
+  as a backup, switching on its own; Settings › Connections says when it's on the backup. Writes
+  are still sent only once. The Render one was down, which is what stopped Sanctum from loading.
+- The Cloudflare service also accepts this site's address, so logging in on the hosted Sanctum
+  (GitHub Pages) works now, as long as its address is a Redirect URL on the Lark app.
+
 ## 2.6.0 · Nov 4, 2026
 
 - **New Mancom page: bring in the week's Mancom sheet.** Download the week's "4DX Management

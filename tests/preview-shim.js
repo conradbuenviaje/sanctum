@@ -56,8 +56,8 @@
 
   window.fetch = async function (input, init) {
     var url = typeof input === "string" ? input : input.url;
-    if (/onrender\.com\/?$/.test(url) || /:\d+\/$/.test(url) && !/127\.0\.0\.1:9123/.test(url)) {
-      return reply({ service: "lark-cors-proxy" }, 120);   // what the real proxy calls itself (no version: not checked)
+    if (/(onrender\.com|workers\.dev)\/?$/.test(url) || /:\d+\/$/.test(url) && !/127\.0\.0\.1:9123/.test(url)) {
+      return reply({ service: "lark-cors-proxy", version: "2.0.0" }, 120);   // what the real proxy calls itself
     }
     var m = url.match(/\/proxy\?url=([^&]+)/);
     if (!m) return realFetch(input, init);

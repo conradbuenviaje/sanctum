@@ -32,8 +32,12 @@ if (isLocalPage()) {
 export const savedLarkUrl = () => (isLocalPage() && isServiceUrl(read().larkUrl || "") ? read().larkUrl : "");
 export const linkLarkUrl = () => (isLocalPage() && isServiceUrl(recall("session", LINK_KEY) || "") ? recall("session", LINK_KEY) : "");
 
-/* The connection service address in force right now. */
-export const larkUrl = () => (linkLarkUrl() || savedLarkUrl() || SERVICES.lark.url).replace(/\/+$/, "");
+/* The connection service addresses in force, tried in order: SERVICES.lark.urls (Cloudflare,
+   then Render), or an override, which replaces the whole list with one address (no backup). */
+export const larkUrls = () => {
+  const o = linkLarkUrl() || savedLarkUrl();
+  return (o ? [o] : SERVICES.lark.urls).map(u => String(u).replace(/\/+$/, ""));
+};
 
 /* Every active override, for the red badge in the top bar. */
 export function overrides() {

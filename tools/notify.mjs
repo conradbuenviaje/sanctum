@@ -45,7 +45,7 @@ let token;
 if (env("LARK_APP_SECRET")) {
   token = await tenantToken({ appId: env("LARK_APP_ID") || LARK.appId, appSecret: env("LARK_APP_SECRET") });
 } else {
-  const service = env("LARK_SERVICE_URL") || SERVICES.lark.url;
+  const service = env("LARK_SERVICE_URL") || SERVICES.lark.urls[0];
   console.log(`No LARK_APP_SECRET: getting the token from the connection service (${service}), which can take a minute to wake…`);
   token = await serviceToken(service);
 }
