@@ -1827,18 +1827,18 @@ export function attachmentLink(json, fileToken) {
    Project Management's board), else the Universe's. A table without its PM column
    (in `fields`) gives no cards. `loaded` keeps each PM cell as the card saw it, so
    the push can tell if it changed in Lark meanwhile. */
-export function pmCards(universe, andon, rules, { fields = {} } = {}) {
+export function pmCards(universe, andon, rules, { fields = {}, hide, tags, tagField } = {}) {
   const cfg = rules.pmSync;
-  if (!cfg) return { cards: [] };
+  const out = { cards: [], tagged: [], hidden: 0 };
+  if (!cfg) return out;
   const has = (table, col) => !fields[table] || fields[table].some(f => f.field_name === col);
-  if (!has("universe", cfg.universe) || !has("andon", cfg.andon)) return { cards: [] };
+  if (!has("universe", cfg.universe) || !has("andon", cfg.andon)) return out;
   const byCode = new Map();
   for (const r of andon || []) {
     const code = normCode(plain((r.fields || {})["Project Code"]));
     if (code) byCode.set(code, [...(byCode.get(code) || []), r]);
   }
   const key = (list) => list.map(u => u.id).sort().join(",");
-  const cards = [];
   for (const row of universe || []) {
     const f = row.fields || {};
     const code = normCode(plain(f["Project Code"]));
@@ -1850,17 +1850,34 @@ export function pmCards(universe, andon, rules, { fields = {} } = {}) {
     const differ = aPms.some(p => key(p) !== key(uPm));
     if (!blank && !differ) continue;
     const suggestion = (aPms.find(p => p.length) || uPm).slice(0, 1);
-    cards.push({
+    sortOut({
       kind: "pm", id: `pm:${row.record_id}`, rowId: row.record_id, code,
       name: clean(f["Project"]) || clean((rows[0].fields || {})["Project"]), status: clean(f["Status"]),
       universePm: uPm, andonPm: aPms, andonRows: rows.map(r => r.record_id), blank, suggestion,
       loaded: { universe: { [cfg.universe]: f[cfg.universe] },
                 andon: Object.fromEntries(rows.map(r => [r.record_id, { [cfg.andon]: (r.fields || {})[cfg.andon] }])) },
       submittedAt: null, notes: [], blocked: "",
-    });
+      // Hidden on this device until either PM changes.
+      hideKey: `pm:${row.record_id}|${key(uPm)}|${aPms.map(key).join("/")}`,
+    }, f, { hide, tags, tagField }, out);
   }
-  cards.sort((a, b) => b.code.localeCompare(a.code, "en", { numeric: true }));
-  return { cards };
+  return byCodeDesc(out);
+}
+
+/* PM and CE cards are tagged on the project's Universe row (ANDON has no Tags column):
+   a row marked with a custom tag sends its card to that tag's group (card.tag), one
+   hidden on this device (card.hideKey in `hide`) is counted, the rest are listed. */
+function sortOut(card, universeFields, { hide, tags, tagField }, out) {
+  const tag = tagField && tags && tags.length ? customTagOf(universeFields, tagField, tags) : null;
+  if (tag) { card.tag = tag; out.tagged.push(card); return; }
+  if (hide && hide.has(card.hideKey)) { out.hidden++; return; }
+  out.cards.push(card);
+}
+function byCodeDesc(out) {
+  const order = (a, b) => b.code.localeCompare(a.code, "en", { numeric: true });
+  out.cards.sort(order);
+  out.tagged.sort(order);
+  return out;
 }
 
 /* The cells a PM Fill writes: the chosen person (one) in both tables. */
@@ -1883,17 +1900,17 @@ const sameLink = (a, b) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
    or where either is blank, gets an Audit card, like the PM's. The card suggests
    ANDON's link, else the Universe's; with both blank, the person pastes it. A table
    without its column (in `fields`) gives no cards. */
-export function ceCards(universe, andon, rules, { fields = {} } = {}) {
+export function ceCards(universe, andon, rules, { fields = {}, hide, tags, tagField } = {}) {
   const cfg = rules.ceSync;
-  if (!cfg) return { cards: [] };
+  const out = { cards: [], tagged: [], hidden: 0 };
+  if (!cfg) return out;
   const has = (table, col) => !fields[table] || fields[table].some(f => f.field_name === col);
-  if (!has("universe", cfg.universe) || !has("andon", cfg.andon)) return { cards: [] };
+  if (!has("universe", cfg.universe) || !has("andon", cfg.andon)) return out;
   const byCode = new Map();
   for (const r of andon || []) {
     const code = normCode(plain((r.fields || {})["Project Code"]));
     if (code) byCode.set(code, [...(byCode.get(code) || []), r]);
   }
-  const cards = [];
   for (const row of universe || []) {
     const f = row.fields || {};
     const code = normCode(plain(f["Project Code"]));
@@ -1904,7 +1921,7 @@ export function ceCards(universe, andon, rules, { fields = {} } = {}) {
     const blank = !uLink || aLinks.some(l => !l);
     const differ = aLinks.some(l => !sameLink(l, uLink));
     if (!blank && !differ) continue;
-    cards.push({
+    sortOut({
       kind: "ce", id: `ce:${row.record_id}`, rowId: row.record_id, code,
       name: clean(f["Project"]) || clean((rows[0].fields || {})["Project"]), status: clean(f["Status"]),
       universeLink: uLink, andonLinks: aLinks, andonRows: rows.map(r => r.record_id), blank,
@@ -1912,10 +1929,11 @@ export function ceCards(universe, andon, rules, { fields = {} } = {}) {
       loaded: { universe: { [cfg.universe]: f[cfg.universe] },
                 andon: Object.fromEntries(rows.map(r => [r.record_id, { [cfg.andon]: (r.fields || {})[cfg.andon] }])) },
       submittedAt: null, notes: [], blocked: "",
-    });
+      // Hidden on this device until either link changes.
+      hideKey: `ce:${row.record_id}|${uLink}|${aLinks.join("/")}`,
+    }, f, { hide, tags, tagField }, out);
   }
-  cards.sort((a, b) => b.code.localeCompare(a.code, "en", { numeric: true }));
-  return { cards };
+  return byCodeDesc(out);
 }
 
 /* The cells a CE Fill writes: the one link in both tables (URL columns take {link, text}). */

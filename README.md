@@ -417,6 +417,10 @@ creates it).
     **Mark** again keeps the new spelling.
   - **Hide on this device**: as before, nothing is written to Lark, and the card
     comes back if another cell of that row goes blank.
+- **PM** and **CE** cards have the same **Hide ▾**. They span the Universe and ANDON,
+  but the tag is written to the project's **Universe** row only (ANDON has no Tags
+  column); Unmark takes it off there. *Hide on this device* keeps the card away until
+  either PM (or either CE link) changes.
 
   A card in a tag group has **Unmark** (takes that tag off; the card is back in the
   list) and **Fill**. Only tags in the custom tag list count: other words in the Tags

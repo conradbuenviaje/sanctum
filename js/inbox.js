@@ -224,7 +224,8 @@ export function createInbox(ctx) {
     const am = c.am ? c.am.map(u => u.name).join(" ") : "";
     const extra = c.kind === "audit" ? `${c.target} ${c.gaps.join(" ")} ${c.tag || ""}`
       : c.kind === "files" ? `${c.field} ${c.label}`
-      : c.kind === "ce" ? `CE ${c.universeLink} ${c.andonLinks.join(" ")}` : "";
+      : c.kind === "ce" ? `CE ${c.universeLink} ${c.andonLinks.join(" ")} ${c.tag || ""}`
+      : c.kind === "pm" ? `PM ${c.tag || ""}` : "";
     return `${c.code} ${c.name} ${c.requestNo} ${c.status} ${am} ${extra}`.toLowerCase().includes(q.toLowerCase().trim());
   }
 
@@ -347,12 +348,13 @@ export function createInbox(ctx) {
       h("div", { class: "item-head" },
         copyable(c.code, { label: "project code", cls: "code" }),
         h("span", { class: "badge badge-info" }, "PM"),
+        c.tag ? h("span", { class: "badge badge-tag" }, ic("pin"), c.tag) : null,
         c.status ? h("span", { class: "item-date" }, c.status) : null),
       h("h3", null, c.name || "(no name)"),
       h("ul", { class: "notes" }, h("li", { class: "flow" },
         h("span", { class: "flow-step" }, h("b", null, "Universe"), ` ${who(c.universePm)}`),
         h("span", { class: "flow-step" }, h("b", null, "ANDON"), ` ${andon}`))),
-      h("div", { class: "item-actions" }, mainButton("Fill", "pm", () => openSheet(c))));
+      h("div", { class: "item-actions" }, hideControl(c), mainButton("Fill", "pm", () => openSheet(c))));
   }
 
   /* A project whose CE link isn't the same in the Universe and ANDON (or is blank in one). */
@@ -364,12 +366,13 @@ export function createInbox(ctx) {
       h("div", { class: "item-head" },
         copyable(c.code, { label: "project code", cls: "code" }),
         h("span", { class: "badge badge-info" }, "CE"),
+        c.tag ? h("span", { class: "badge badge-tag" }, ic("pin"), c.tag) : null,
         c.status ? h("span", { class: "item-date" }, c.status) : null),
       h("h3", null, c.name || "(no name)"),
       h("ul", { class: "notes" }, h("li", { class: "flow" },
         h("span", { class: "flow-step" }, h("b", null, RULES.ceSync.universe), " ", link(c.universeLink)),
         h("span", { class: "flow-step" }, h("b", null, `ANDON ${RULES.ceSync.andon}`), " ", ...andon.flatMap((u, i) => [i ? " / " : null, link(u)])))),
-      h("div", { class: "item-actions" }, mainButton("Fill", "ce", () => openSheet(c))));
+      h("div", { class: "item-actions" }, hideControl(c), mainButton("Fill", "ce", () => openSheet(c))));
   }
 
   /* An ANDON row whose project has a Project Approval: its Request No. goes into
@@ -543,30 +546,44 @@ export function createInbox(ctx) {
         c.status ? ` · ${c.status}` : ""),
       h("ul", { class: "notes" }, h("li", { class: "flow" }, h("span", { class: "flow-row" }, "Missing"),
         h("span", { class: "flow-step" }, c.gaps.join(" · ")))),
-      h("div", { class: "item-actions" },
-        c.tag
-          ? h("button", { type: "button", class: "btn btn-ghost", disabled: !ctx.canWriteFor(`tag:${c.target}`),
-              title: `Takes “${c.tag}” off this row, so it's back in the list (for everyone)`,
-              onclick: (e) => markTag(c, c.tag, false, e.currentTarget) }, "Unmark")
-          : !RULES.tags.tables.includes(c.target)
-          // A table without custom tags (ANDON): Hide is just "on this device", as it always was.
-          ? h("button", { type: "button", class: "btn btn-ghost", title: "Hides this card on this device until another cell goes blank",
-              onclick: (e) => hideAudit(c, true, e.currentTarget) }, "Hide")
-          : h("button", { type: "button", class: "btn btn-ghost hide-btn", "aria-haspopup": "menu", "aria-expanded": "false",
-              title: "Mark it with a tag (for everyone), or hide it on this device",
-              onclick: (e) => hideMenu(c, e.currentTarget) }, "Hide", ic("caret")),
-        mainButton("Fill", `audit:${c.target}`, () => openSheet(c))));
+      h("div", { class: "item-actions" }, hideControl(c), mainButton("Fill", `audit:${c.target}`, () => openSheet(c))));
+  }
+
+  /* The table an audit card's tag is written to: its own, or for a PM or CE card (which
+     spans the Universe and ANDON) the Universe, since ANDON has no Tags column. */
+  const tagTable = (c) => (c.kind === "audit" ? c.target : "universe");
+  const whereOf = (c) => (c.kind === "pm" ? "PM" : c.kind === "ce" ? "CE" : AUDIT_WHERE[c.target]);
+  const tagRow = (c) => (S.data[tagTable(c)] || []).find(r => r.record_id === c.rowId) || { fields: {} };
+
+  /* An audit card's Unmark (when tagged), or Hide: a menu of tags + "on this device",
+     or only "on this device" where the table has no custom tags. */
+  function hideControl(c) {
+    const t = tagTable(c);
+    if (c.tag) {
+      return h("button", { type: "button", class: "btn btn-ghost", disabled: !ctx.canWriteFor(`tag:${t}`),
+        title: `Takes “${c.tag}” off the ${AUDIT_WHERE[t]} row, so it's back in the list (for everyone)`,
+        onclick: (e) => markTag(c, c.tag, false, e.currentTarget) }, "Unmark");
+    }
+    if (!RULES.tags.tables.includes(t)) {
+      // A table without custom tags (ANDON): Hide is just "on this device", as it always was.
+      return h("button", { type: "button", class: "btn btn-ghost", title: "Hides this card on this device until another cell goes blank",
+        onclick: (e) => hideAudit(c, true, e.currentTarget) }, "Hide");
+    }
+    return h("button", { type: "button", class: "btn btn-ghost hide-btn", "aria-haspopup": "menu", "aria-expanded": "false",
+      title: c.kind === "audit" ? "Mark it with a tag (for everyone), or hide it on this device"
+        : "Mark the project's Universe row with a tag (for everyone), or hide it on this device",
+      onclick: (e) => hideMenu(c, e.currentTarget) }, "Hide", ic("caret"));
   }
 
   /* Under Hide: "Mark as …" for each custom tag (Settings > Custom tags), written to
      the row's Tags cell so the card leaves everyone's list, and "Hide on this device". */
   function hideMenu(c, btn) {
-    const canTag = ctx.canWriteFor(`tag:${c.target}`);
+    const canTag = ctx.canWriteFor(`tag:${tagTable(c)}`);
     const items = canTag ? S.customTags.map(t => ({ label: `Mark as ${t.tag}`, icon: "pin",
       onSelect: () => markTag(c, t.tag, true, btn) })) : [];
     if (!canTag && S.customTags.length) {
-      items.push({ label: "Why no “Mark as …”?", icon: "info", onSelect: () => toast(`Marking needs a “${RULES.tags.field}” column in ${AUDIT_WHERE[c.target]}.`,
-        { detail: ctx.problemsFor(`tag:${c.target}`)[0] || "Your login can only read the tables. Log in again to allow it.", timeout: 0 }) });
+      items.push({ label: "Why no “Mark as …”?", icon: "info", onSelect: () => toast(`Marking needs a “${RULES.tags.field}” column in ${AUDIT_WHERE[tagTable(c)]}.`,
+        { detail: ctx.problemsFor(`tag:${tagTable(c)}`)[0] || "Your login can only read the tables. Log in again to allow it.", timeout: 0 }) });
     }
     if (canTag) items.push({ label: "Mark as another tag…", icon: "plus", onSelect: () => otherTag(c, btn) });
     else if (!S.customTags.length) {
@@ -587,7 +604,7 @@ export function createInbox(ctx) {
       if (!inUse.some(y => y.toLowerCase() === x.toLowerCase())) inUse.push(x);
     }
     inUse.sort((a, b) => a.localeCompare(b));
-    const mine = tagsOf(auditRow(c).fields[RULES.tags.field]);
+    const mine = tagsOf(tagRow(c).fields[RULES.tags.field]);
     const offer = [...custom, ...inUse.filter(t => !custom.some(x => x.toLowerCase() === t.toLowerCase()))]
       .filter(t => !mine.some(x => x.toLowerCase() === t.toLowerCase()));
     const input = h("input", { type: "text", list: "otherTagList", autocomplete: "off", maxlength: "60", placeholder: "e.g. On Hold",
@@ -652,9 +669,9 @@ export function createInbox(ctx) {
      Ignore: the card moves at once, the write follows, and a refusal moves it back
      with the reason. The tag is merged into what the Tags cell says in Lark then. */
   async function markTag(c, tag, add, button) {
-    const key = `tag:${c.target}:${c.rowId}`;
+    const table = tagTable(c), field = RULES.tags.field;
+    const key = `tag:${table}:${c.rowId}`;
     if (S.working.has(key)) return;
-    const table = c.target, field = RULES.tags.field;
     const rec = (S.data[table] || []).find(r => r.record_id === c.rowId);
     if (!rec || !ctx.ensureTime()) return;
     const before = rec.fields[field];
@@ -703,8 +720,9 @@ export function createInbox(ctx) {
     store("local", "polaris.auditHidden", [...S.auditHide]);
     ctx.recompute();
     ctx.render();
-    if (value) toast(`Hid ${c.code} (${AUDIT_WHERE[c.target]}).`, { action: "Undo", onAction: () => hideAudit(c, false),
-      detail: "Only on this device. It comes back if another cell goes blank." });
+    if (value) toast(`Hid ${c.code} (${whereOf(c)}).`, { action: "Undo", onAction: () => hideAudit(c, false),
+      detail: c.kind === "audit" ? "Only on this device. It comes back if another cell goes blank."
+        : `Only on this device. It comes back if either ${c.kind === "pm" ? "PM" : "CE link"} changes.` });
   }
 
   /* The fill sheet: every blank with an editor, pre-filled from the brief (which

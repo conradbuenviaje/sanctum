@@ -1295,6 +1295,14 @@ test("CE audit: the Universe's Internal CE (Sheet) and ANDON's Working CE must b
   assert.deepEqual(ceWrites(B, RULES), { universe: { [U]: { link: B, text: B } }, andon: { [N]: { link: B, text: B } } });
   // A table without its column gives no cards.
   assert.equal(ceCards(universe, andon, RULES, { fields: { universe: [{ field_name: "Project Code" }], andon: [{ field_name: N }] } }).cards.length, 0);
+  // Tagged on the Universe row: to its tag's group. Hidden on this device: counted, until a link changes.
+  const tagged = universe.map(r => (r.record_id === "u3" ? { ...r, fields: { ...r.fields, Tags: "Event, No Revenue" } } : r));
+  const t = ceCards(tagged, andon, RULES, { tags: ["No Revenue"], tagField: "Tags", hide: new Set([by.u4.hideKey]) });
+  assert.deepEqual(t.cards.map(c => c.rowId), ["u2"]);
+  assert.deepEqual(t.tagged.map(c => [c.rowId, c.tag]), [["u3", "No Revenue"]]);
+  assert.equal(t.hidden, 1);
+  const moved = andon.map(r => (r.record_id === "a4" ? { ...r, fields: { ...r.fields, [N]: url(B) } } : r));
+  assert.ok(ceCards(universe, moved, RULES, { hide: new Set([by.u4.hideKey]) }).cards.some(c => c.rowId === "u4"));
   assert.equal(linkIn(url(A)), A);
   assert.equal(linkIn(seg(A)), A);
   assert.equal(validLink(" " + A + " "), A);

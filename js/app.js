@@ -489,13 +489,16 @@ function recompute() {
     { hide: S.auditHide, byCode, options: ctx.optionsOf("andon"), fields: fieldsOf("andon"), ...tagsFor("andon") })
     : { cards: [], tagged: [], hidden: { noBrief: 0, hidden: 0 } };
   // …and projects whose PM isn't the same in the Universe and ANDON (or is blank in either).
-  const pm = d.andon ? pmCards(d.universe, d.andon, RULES, { fields: { universe: fieldsOf("universe"), andon: fieldsOf("andon") } }) : { cards: [] };
+  // Both are tagged on the Universe row (ANDON has no Tags column).
+  const syncOpts = { fields: { universe: fieldsOf("universe"), andon: fieldsOf("andon") }, hide: S.auditHide, ...tagsFor("universe") };
+  const none = { cards: [], tagged: [], hidden: 0 };
+  const pm = d.andon ? pmCards(d.universe, d.andon, RULES, syncOpts) : none;
   // …and projects whose CE link isn't the same in both (or is blank in either).
-  const ce = d.andon ? ceCards(d.universe, d.andon, RULES, { fields: { universe: fieldsOf("universe"), andon: fieldsOf("andon") } }) : { cards: [] };
+  const ce = d.andon ? ceCards(d.universe, d.andon, RULES, syncOpts) : none;
   S.lists.audit = {
     cards: [...uniAudit.cards, ...andonAudit.cards].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0)).concat(pm.cards, ce.cards),
-    tagged: tagGroups([...uniAudit.tagged, ...andonAudit.tagged], S.customTags.map(x => x.tag)),
-    hidden: { hiddenHere: uniAudit.hidden.hidden + andonAudit.hidden.hidden },
+    tagged: tagGroups([...uniAudit.tagged, ...andonAudit.tagged, ...pm.tagged, ...ce.tagged], S.customTags.map(x => x.tag)),
+    hidden: { hiddenHere: uniAudit.hidden.hidden + andonAudit.hidden.hidden + pm.hidden + ce.hidden },
   };
   S.pool = peoplePool(d.universe, d.brief);
   S.clients = [...new Set(uni.rows.map(r => r.client).filter(Boolean))].sort((a, b) => a.localeCompare(b));
