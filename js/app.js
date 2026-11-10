@@ -20,6 +20,7 @@ import { createAndon } from "./andon.js";
 import { createSources, SOURCE_KINDS } from "./sources.js";
 import { createQueue } from "./queue.js";
 import { createTagging } from "./tagging.js";
+import { createFiles } from "./files.js";
 
 const tables = Object.fromEntries(Object.entries(TABLE_LINKS).map(([k, link]) => [k, parseBaseLink(link)]));
 const KEY = { theme: "polaris.theme", tab: "polaris.tab", draft: "polaris.draft" };
@@ -185,6 +186,7 @@ const collections = createCollections(ctx);
 const andon = createAndon(ctx);
 const sources = createSources(ctx);
 const tagging = createTagging(ctx);   // the Tagging page: every Universe project's tags
+const files = createFiles(ctx);       // the Files page: the tables' files, as one zip
 const queue = ctx.queue = createQueue(ctx, inbox);   // Push hands its write to the queue
 
 /* ======================= the pane switcher =======================
@@ -225,7 +227,7 @@ for (const btn of $$(".pane-switch")) {
 /* ======================= routes ======================= */
 // #/briefs and #/pars (the tabs before 1.9.0) open the Universe tab, so old links still work.
 const ROUTES = { "": "universe", universe: "universe", briefs: "universe", pars: "universe", invoices: "invoice", andon: "andon",
-                 audit: "audit", tagging: "tagging", collections: "invoice", settings: "settings", queue: "queue" };
+                 audit: "audit", tagging: "tagging", files: "files", collections: "invoice", settings: "settings", queue: "queue" };
 const parseRoute = () => ROUTES[(location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ""] || "universe";
 
 function onRoute() {
@@ -235,7 +237,7 @@ function onRoute() {
     S.view = "login";
     S.returnTo = location.hash || "#/universe";
   } else {
-    if (r === "queue" || r === "tagging") {
+    if (r === "queue" || r === "tagging" || r === "files") {
       S.view = r;
       render();
       if (!S.data && !S.loading && !S.loadError) loadData();
@@ -257,7 +259,7 @@ function onRoute() {
 /* ======================= rendering ======================= */
 const TAB_TITLES = { universe: "Universe", invoice: "Invoices", andon: "ANDON", audit: "Audit" };
 function pageTitle() {
-  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", tagging: "Tagging" }[S.view] || TAB_TITLES[S.tab];
+  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", tagging: "Tagging", files: "Files" }[S.view] || TAB_TITLES[S.tab];
   return `${name} · ${APP.name}`;
 }
 
@@ -296,6 +298,7 @@ function render() {
   }
   if (S.view === "settings") renderSettings();
   if (S.view === "tagging") tagging.render();
+  if (S.view === "files") files.render();
   queue.paint();      // the Queue tab, its peek and the queue page
 }
 
@@ -316,6 +319,7 @@ function renderHeader() {
   $("#meLink").hidden = !signedIn;
   $("#workLink").hidden = !signedIn;
   $("#tagLink").hidden = !signedIn;
+  $("#filesLink").hidden = !signedIn;
   for (const a of $$(".nav a")) {
     if (a.dataset.nav === S.view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   }
@@ -426,6 +430,7 @@ async function loadData({ quiet = false } = {}) {
       andon.renderLoader();
       sources.renderLoader();
       if (S.view === "tagging") tagging.render();
+      if (S.view === "files") files.render();
     });
     S.data = res.data;
     S.fields = res.fields;

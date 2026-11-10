@@ -1944,3 +1944,114 @@ export function ceWrites(link, rules) {
 
 /* A link a person typed: https only (so it opens), else "". */
 export const validLink = (s) => (/^https:\/\/[^\s/]+\.[^\s]+$/i.test(String(s || "").trim()) ? String(s).trim() : "");
+
+/* ======================= the Files page ======================= */
+/* Universe and Collections rows with files in the columns rules.filesPage lists, and
+   the approval links of the briefs, PARs and invoice requests. */
+
+// A part of a file name: no characters Windows or macOS refuse, spaces kept, at most 80.
+export function fileNamePart(s) {
+  return String(s || "").replace(/[\/:*?"<>|\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ")
+    .trim().replace(/[. ]+$/, "").slice(0, 80).trim();
+}
+// "Report.Final.PDF" → "pdf"; none (or something odd) → `fallback`.
+export function extOf(name, fallback = "") {
+  const m = String(name || "").match(/\.([A-Za-z0-9]{1,8})$/);
+  return m ? m[1].toLowerCase() : fallback;
+}
+const filesIn = (v) => (Array.isArray(v) ? v : []).filter(x => x && typeof x === "object" && x.file_token);
+
+/* The rows of `table` ("universe" or "collections") with at least one file:
+   [{ id, table, code, name, status, year, sub, files: [{ prefix, label, field, file }] }],
+   newest project code first. Collections rows take the project's name from the
+   Universe (by code), else their AR Name. */
+export function fileRows(table, records, rules, { universe = [] } = {}) {
+  const cols = (rules.filesPage || {})[table] || [];
+  const names = new Map();
+  if (table === "collections") {
+    for (const r of universe || []) {
+      const f = r.fields || {};
+      const code = normCode(plain(f["Project Code"]));
+      if (code && !names.has(code)) names.set(code, clean(f["Project"]));
+    }
+  }
+  const out = [];
+  for (const r of records || []) {
+    const f = r.fields || {};
+    const files = cols.flatMap(c => filesIn(f[c.field]).map(file => ({ prefix: c.prefix, label: c.label, field: c.field, name: c.name, file })));
+    if (!files.length) continue;
+    const code = normCode(plain(f["Project Code"])) || clean(f["Project Code"]);
+    const ar = clean(f["AR Name"]);
+    out.push({
+      id: r.record_id, table, code,
+      name: table === "collections" ? names.get(code) || ar : clean(f["Project"]),
+      status: clean(f["Status"]), year: clean(f["Year"]), invoiceNo: clean(f["Invoice Number"]),
+      sub: table === "collections" ? [clean(f["Invoice Number"]) && `Invoice ${clean(f["Invoice Number"])}`, ar].filter(Boolean).join(" · ") : "",
+      files,
+    });
+  }
+  return out.sort((a, b) => (!a.code) - (!b.code) || b.code.localeCompare(a.code, "en", { numeric: true }));
+}
+
+/* Each file of the picked rows with its name in the zip:
+   {prefix}_{project code}_{project name}_{n}.{its extension}, or the parts its column
+   lists in `name` (Collections: {project code}_{invoice number}) (n counts from 1 per
+   prefix and project, across rows: a project's second invoice row goes on from 2).
+   `prefixes` = the kinds to include (all when left out). Names never repeat. */
+export function zipEntries(rows, { prefixes } = {}) {
+  const counts = new Map(), used = new Set(), out = [];
+  for (const row of rows) {
+    for (const x of row.files) {
+      if (prefixes && !prefixes.includes(x.prefix)) continue;
+      const part = { code: fileNamePart(row.code) || "no-code", name: fileNamePart(row.name) || "no-name",
+                     invoice: fileNamePart(row.invoiceNo) || "no-invoice-number" };
+      const base = x.name ? x.name.map(k => part[k]).join("_") : [x.prefix, part.code, part.name].join("_");
+      const ext = extOf(x.file.name, x.prefix === "signed_ce" ? "pdf" : "");
+      let n = counts.get(base) || 0, name;
+      do { n++; name = `${base}_${n}${ext ? `.${ext}` : ""}`; } while (used.has(name.toLowerCase()));
+      counts.set(base, n);
+      used.add(name.toLowerCase());
+      out.push({ name, table: row.table, rowId: row.id, file: x.file, size: Number(x.file.size) || 0 });
+    }
+  }
+  return out;
+}
+
+/* The approval-link columns of a brief, PAR or invoice request table: URL columns
+   whose name matches rules.filesPage.approvalColumns (not Request No.). */
+export function approvalColumns(fields, rules) {
+  const re = (rules.filesPage || {}).approvalColumns;
+  return (fields || []).filter(f => f.type === 15 && f.field_name !== "Request No." && re && re.test(f.field_name)).map(f => f.field_name);
+}
+
+/* The rows of one approval table with a link in those columns, newest first:
+   [{ id, code, name, requestNo, request, status, submittedAt, links: [{ column, link, text }] }]. */
+export function approvalFileRows(records, columns) {
+  const out = [];
+  for (const r of records || []) {
+    const f = r.fields || {};
+    const links = columns.map(column => {
+      const v = f[column];
+      const link = linkIn(v);
+      return /^https:\/\//.test(link) ? { column, link, text: (v && typeof v === "object" && clean(v.text)) || column } : null;
+    }).filter(Boolean);
+    if (!links.length) continue;
+    const req = f["Request No."];
+    out.push({
+      id: r.record_id, code: normCode(plain(f["Project Code"])) || clean(f["Project Code"]),
+      name: clean(f["Project Name"]) || clean(f["Project"]), requestNo: requestNo(req),
+      request: req && typeof req.link === "string" && /^https:\/\//.test(req.link) ? req.link : "",
+      status: clean(f["Status"]), submittedAt: num(f["Submitted at"]), links,
+    });
+  }
+  return out.sort(bySubmittedDesc);
+}
+
+/* Rows matching a search (code, name, status, the extra line, file names). */
+export function filesMatch(row, query) {
+  const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = [row.code, row.name, row.status, row.sub, row.requestNo,
+    ...(row.files || []).map(x => x.file.name), ...(row.links || []).map(l => l.text)].join(" ").toLowerCase();
+  return words.every(w => hay.includes(w));
+}

@@ -49,6 +49,10 @@ const TYPE_NAMES = { 1: "Text", 2: "Number", 3: "Single select", 4: "Multi selec
 export function schemaSpec(rules) {
   // Custom tags only where rules.tags.tables says there's a Tags column.
   const tagsIn = (key) => (rules.tags.tables || []).includes(key);
+  // Extra columns read when the table has them: the approval links (URL columns named
+  // like rules.filesPage.approvalColumns) the Files page lists.
+  const approvalLinks = (f) => f.type === T.url && f.field_name !== "Request No." && !!(rules.filesPage && rules.filesPage.approvalColumns
+    && rules.filesPage.approvalColumns.test(f.field_name));
   return {
     universe: {
       // Everything the cards and the Universe view need; `index` is the lean set
@@ -127,6 +131,7 @@ export function schemaSpec(rules) {
         "Business Unit": T.select,
       },
       optional: { "Required Tools": T.multi },
+      readAlso: approvalLinks,   // the Files page's approval links
     },
     andon: {
       // What a person types into an ANDON row. ANDON fills the rest (Brief, Brief Status,
@@ -154,6 +159,7 @@ export function schemaSpec(rules) {
         "Request No.": T.url, "Project Code": T.text, "Project Name": T.text, "Status": T.select,
         "Submitted at": T.date, "Associated Project Brief": T.text, "IGNORE": T.checkbox,
       },
+      readAlso: approvalLinks,
     },
     invoice: {
       fields: {
@@ -164,6 +170,7 @@ export function schemaSpec(rules) {
       // Used when present: the PAR a request belongs to (to find its project when
       // the typed code is wrong) and when it was approved (to match older rows).
       optional: { "Associated Project Approval": T.text, "Completed at": T.date },
+      readAlso: approvalLinks,
     },
   };
 }
@@ -172,19 +179,22 @@ export function schemaSpec(rules) {
    against in the push sheet (js/rowdoc.js), so a destination table reads them too. */
 const SHOWN_COMPUTED = new Set([18, 19, 20, 21]);
 const MAX_FIELD_NAMES = 50;   // Lark's limit on a records/search field list
+const MAX_FIELD_NAME_LEN = 50;   // …and on each name in it (PAR's attachment column is longer)
 
 /* The columns to read for a table, from its live field list: the spec's (only
    those the table has: Lark refuses a list naming a missing one) and, for the
    tables pushes write to, every lookup and formula. Past Lark's 50-name limit, or
-   for read "*": undefined, meaning every column. */
+   for read "*", or with a name over 50 characters (Lark refuses those in the list):
+   undefined, meaning every column. */
 export function columnsToRead(key, fields, rules) {
   const t = schemaSpec(rules)[key];
   if (!t || t.read === "*") return undefined;
   const present = new Set(fields.map(f => f.field_name));
   const base = t.read || [...Object.keys(t.fields), ...Object.keys(t.optional || {})];
   const computed = t.read ? fields.filter(f => SHOWN_COMPUTED.has(f.type)).map(f => f.field_name) : [];
-  const names = [...new Set([...base, ...computed])].filter(n => present.has(n));
-  return names.length > MAX_FIELD_NAMES ? undefined : names;
+  const also = t.readAlso ? fields.filter(t.readAlso).map(f => f.field_name) : [];
+  const names = [...new Set([...base, ...computed, ...also])].filter(n => present.has(n));
+  return names.length > MAX_FIELD_NAMES || names.some(n => n.length > MAX_FIELD_NAME_LEN) ? undefined : names;
 }
 
 const tableUrl = (t) => `${OPEN_API}/bitable/v1/apps/${encodeURIComponent(t.app)}/tables/${encodeURIComponent(t.table)}`;

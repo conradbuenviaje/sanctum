@@ -489,6 +489,38 @@ misspelling a tag:
   row editor.
 - The search looks through the code, project, status and tags.
 
+## The Files page
+
+**Files**, in the top bar after *Tagging*: the files kept in Lark, to download many at
+once. Nothing is written to Lark. Three parts:
+
+- **Universe**: every project with a file in **Signed CE (PDF)** or **Other
+  Attachments**, newest Project Code first.
+- **Collections**: every row with a file in **Invoice** (the project's name comes from
+  the Universe; the row's AR Name if the code isn't there).
+- **Approvals**: the **Project Brief**, **Project Approval** and **Invoice Request**
+  rows whose attachments are in Lark Approval. Polaris can't download those, so each is a
+  link that opens the approval; download them there. The columns are the URL columns
+  with *attach* in their name (`RULES.filesPage.approvalColumns`).
+
+Click a Universe or Collections row (or its box) to put it in the **Download** list on
+the right; **Select all** takes every row the search shows. One file can also be
+downloaded on its own from its name. The list says how many files and how big; with
+both kinds of file in it, *Include* leaves a kind out. **Download zip** fetches each
+file through the connection service (three at a time, as you, like a row's own download
+button) and saves one zip, `polaris-files-YYYY-MM-DD.zip`, with the files renamed:
+
+| Column | Name in the zip |
+|---|---|
+| Signed CE (PDF) | `signed_ce_{project code}_{project name}_{n}.pdf` |
+| Other Attachments | `other_{project code}_{project name}_{n}.{its extension}` |
+| Invoice (Collections) | `{project code}_{invoice number}_{n}.{its extension}` (`no-invoice-number` when the row has none) |
+
+`n` counts from 1 for each name (two files on one invoice give `_1` and `_2`). Characters a file name can't have are taken out of the project name. A file keeps
+its own extension (a signed CE without one gets `.pdf`). A file Lark won't hand over is
+left out, and the message names it. The zip is built in the browser (`js/zip.js`,
+stored, not compressed) and is capped at 2 GB: take rows out, or download in parts.
+
 ---
 
 ## The source tables
@@ -960,6 +992,8 @@ design language first, copy them over unedited, then `npm run check:shell` confi
 | `js/universe.js` | The Universe table. |
 | `js/andon.js` | The ANDON table. |
 | `js/tagging.js` | The Tagging page: every Universe project and its tags, added and taken off one at a time. |
+| `js/files.js` | The Files page: the Universe's and Collections' files, picked into a list and saved as one zip; the approvals' links. |
+| `js/zip.js` | Makes a zip in the browser (stored, UTF-8 names), for the Files page. |
 | `js/sources.js` | The Project Brief, Project Approval and Invoice Request tables (read-only), shown with the table switcher; a row opens read-only (`inbox.js` `openView`). |
 | `js/collections.js` | The Collections table and its invoice details sheet. |
 | `js/icons.js`, `js/ui.js` | The shared Mineski icons and UI helpers: unedited copies of `design-ref/mineski-design-language/assets/`. Change them there, then copy them over. |

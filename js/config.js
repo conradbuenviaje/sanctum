@@ -9,7 +9,7 @@
 
 /* version: bump it with every release and add an entry to CHANGELOG.md (newest first, same number).
    The top bar shows it beside the name, so people can see at a glance which version they're running. */
-export const APP = { name: "Polaris", key: "polaris", version: "1.13.1", env: "live" };   // env: "live" | "test"
+export const APP = { name: "Polaris", key: "polaris", version: "1.14.1", env: "live" };   // env: "live" | "test"
 export const ENV_LABEL = APP.env === "test" ? "Test copy" : "";         // shown in the header, never a gate
 
 /* The connection service: the shared Lark proxy (Render). `service` is the name its
@@ -154,6 +154,21 @@ export const RULES = {
     tables: ["universe"],
     nameColumn: "Variable",
     valueColumn: "Value",
+  },
+
+  // The Files page: the attachment columns whose files go in the zip, and how each
+  // file is named there: {prefix}_{project code}_{project name}_{n}.{its extension}, or
+  // with `name` set, those parts instead ("code", "name", "invoice" = the Invoice Number).
+  filesPage: {
+    universe: [
+      { field: "Signed CE (PDF)", prefix: "signed_ce", label: "Signed CE" },
+      { field: "Other Attachments", prefix: "other", label: "Other attachments" },
+    ],
+    // {project code}_{invoice number}_{n}.{ext}
+    collections: [{ field: "Invoice", prefix: "invoice", label: "Invoices", name: ["code", "invoice"] }],
+    // Approvals: the link columns (URL) of the brief, PAR and invoice request tables
+    // whose name has this in it. They open the files in Lark Approval, not as a download.
+    approvalColumns: /attach/i,
   },
 
   // Date-only fields (RFP Received Date) are stored as midnight in this offset.

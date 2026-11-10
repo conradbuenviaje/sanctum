@@ -9,6 +9,23 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 1.14.1 · Nov 10, 2026
+
+- **Changed:** in the Files page's zip, Collections invoices are named
+  `{project code}_{invoice number}_{n}` (e.g. `2026TEG-P0101_INV-2041_1.pdf`) instead of
+  by project name. A row with no Invoice Number gets `no-invoice-number`.
+
+## 1.14.0 · Nov 10, 2026
+
+- **New:** a **Files** page, in the top bar after *Tagging*. It lists every Universe
+  project with a **Signed CE (PDF)** or **Other Attachments** file, and every Collections
+  row with an **Invoice** file. Click rows (or **Select all**) to add them to the
+  download list, then **Download zip**: one zip with the files renamed
+  `signed_ce_{code}_{project}_{n}.pdf`, `other_{code}_{project}_{n}.{ext}` and
+  `invoice_{code}_{project}_{n}.{ext}`.
+- **New:** the Files page's **Approvals** part lists the Project Brief, Project Approval
+  and Invoice Request attachments with a link to each approval, to download them there.
+
 ## 1.13.1 · Nov 9, 2026
 
 - **New:** an audit card's **Hide ▾** has **Mark as another tag…**: type any tag. If it
