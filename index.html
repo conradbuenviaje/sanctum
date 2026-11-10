@@ -67,7 +67,7 @@
     (function () {
       var v = window.APP_BUILD = Date.now().toString(36);
       var files = ["js/config.js", "js/sync.js", "js/ops.js", "js/icons.js", "js/ui.js", "js/polaris-ui.js", "js/errors.js",
-                   "js/service.js", "js/settings.js", "js/net.js", "js/session.js", "js/auth.js", "js/inbox.js", "js/universe.js", "js/collections.js", "js/andon.js", "js/sources.js", "js/queue.js", "js/rowdoc.js", "js/tagging.js", "js/zip.js", "js/files.js", "js/accountability.js", "js/board.js", "js/admin.js", "js/xlsx.js", "js/mancom.js", "js/mancomview.js", "js/app.js"];
+                   "js/service.js", "js/settings.js", "js/net.js", "js/session.js", "js/auth.js", "js/inbox.js", "js/universe.js", "js/collections.js", "js/andon.js", "js/sources.js", "js/queue.js", "js/rowdoc.js", "js/zip.js", "js/files.js", "js/accountability.js", "js/board.js", "js/admin.js", "js/xlsx.js", "js/mancom.js", "js/mancomview.js", "js/app.js"];
       var map = { imports: {} };
       files.forEach(function (f) { map.imports[new URL(f, location.href).href] = new URL(f + "?v=" + v, location.href).href; });
       document.write('<link rel="stylesheet" href="css/theme.css?v=' + v + '">');
@@ -97,7 +97,6 @@
       <nav class="nav" aria-label="Main">
         <a href="#/accountability" data-nav="accountability" id="boardLink" hidden>Open Items</a>
         <a href="#/universe" data-nav="work" id="workLink" hidden>Data Audit</a>
-        <a href="#/tagging" data-nav="tagging" id="tagLink" title="Every Universe project and its tags" hidden>Tagging</a>
         <a href="#/files" data-nav="files" id="filesLink" title="Download the files kept in the Universe and Collections" hidden>Files</a>
         <a href="#/mancom" data-nav="mancom" id="mancomLink" hidden>Mancom</a>
         <a href="#/admin" data-nav="admin" id="adminLink" hidden>Admin</a>
@@ -334,29 +333,6 @@
         <span>You have changes that aren't saved.</span>
         <button type="button" class="btn btn-ghost btn-sm" id="adminDiscard">Discard</button>
         <button type="button" class="btn btn-primary btn-sm" id="adminSave"><span class="label">Save changes</span></button>
-      </div>
-    </section>
-
-    <!-- Tagging: every Universe project and its tags (js/tagging.js) ----------->
-    <section class="view view-tagging" data-view="tagging" aria-labelledby="tagTitle">
-      <div class="page-head">
-        <div>
-          <h1 id="tagTitle">Tagging</h1>
-          <p class="lede sm" id="tagSub"></p>
-        </div>
-        <div class="page-tools">
-          <label class="search search-sm">
-            <span class="i" data-icon="search" aria-hidden="true"></span>
-            <span class="sr-only">Search the projects and tags</span>
-            <input type="search" id="tagSearch" placeholder="Search code, project, status, tag…" autocomplete="off" spellcheck="false">
-          </label>
-        </div>
-      </div>
-      <div class="tag-summary" id="tagSummary" aria-label="Tags in use"></div>
-      <div class="tbl-wrap tag-wrap">
-        <table class="tbl uni tagging" id="tagTable"></table>
-        <div class="loader" id="tagLoader" hidden></div>
-        <div class="empty small" id="tagEmpty" hidden></div>
       </div>
     </section>
 

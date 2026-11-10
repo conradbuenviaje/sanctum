@@ -25,7 +25,6 @@ import { configFrom, accountabilityItems, dismissalsFrom, isAdmin, isEditor } fr
 import { createBoard } from "./board.js";
 import { createAdmin } from "./admin.js";
 import { createMancom } from "./mancomview.js";
-import { createTagging } from "./tagging.js";
 import { createFiles } from "./files.js";
 
 const tables = Object.fromEntries(Object.entries(TABLE_LINKS).map(([k, link]) => [k, parseBaseLink(link)]));
@@ -191,7 +190,6 @@ const universe = createUniverse(ctx);
 const collections = createCollections(ctx);
 const andon = createAndon(ctx);
 const sources = createSources(ctx);
-const tagging = createTagging(ctx);   // the Tagging page: every Universe project's tags
 const files = createFiles(ctx);       // the Files page: the tables' files, as one zip
 const queue = ctx.queue = createQueue(ctx, inbox);   // Push hands its write to the queue
 // The board's fields open the row editor; for people who may only look, the row read-only.
@@ -248,7 +246,7 @@ for (const btn of $$(".pane-switch")) {
 // #/briefs and #/pars (Polaris's tabs before 1.9.0) open the Universe tab, so old links still work.
 const ROUTES = { "": "accountability", accountability: "accountability", admin: "admin", mancom: "mancom",
                  universe: "universe", briefs: "universe", pars: "universe", invoices: "invoice", andon: "andon",
-                 audit: "audit", tagging: "tagging", files: "files", collections: "invoice", settings: "settings", queue: "queue" };
+                 audit: "audit", files: "files", collections: "invoice", settings: "settings", queue: "queue" };
 const parseRoute = () => ROUTES[(location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ""] || "accountability";
 
 function onRoute() {
@@ -258,7 +256,7 @@ function onRoute() {
     S.view = "login";
     S.returnTo = location.hash || "#/accountability";
   } else {
-    if (r === "queue" || r === "accountability" || r === "admin" || r === "mancom" || r === "tagging" || r === "files") {
+    if (r === "queue" || r === "accountability" || r === "admin" || r === "mancom" || r === "files") {
       S.view = r;
       render();
       if (!S.data && !S.loading && !S.loadError) loadData();
@@ -280,7 +278,7 @@ function onRoute() {
 /* ======================= rendering ======================= */
 const TAB_TITLES = { universe: "Universe", invoice: "Invoices", andon: "ANDON", audit: "Audit" };
 function pageTitle() {
-  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Open Items", admin: "Admin", mancom: "Mancom", tagging: "Tagging", files: "Files" }[S.view] || TAB_TITLES[S.tab];
+  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Open Items", admin: "Admin", mancom: "Mancom", files: "Files" }[S.view] || TAB_TITLES[S.tab];
   return `${name} · ${APP.name}`;
 }
 
@@ -327,7 +325,6 @@ function render() {
   if (S.view === "accountability") board.render();
   if (S.view === "admin") admin.render();
   if (S.view === "mancom") mancom.render();
-  if (S.view === "tagging") tagging.render();
   if (S.view === "files") files.render();
   queue.paint();      // the Queue tab, its peek and the queue page
 }
@@ -351,7 +348,6 @@ function renderHeader() {
   const admin = access() === "admin", editor = admin || access() === "editor";
   $("#workLink").hidden = !signedIn || !editor;
   $("#mancomLink").hidden = !signedIn || !editor;
-  $("#tagLink").hidden = !signedIn || !editor;
   $("#filesLink").hidden = !signedIn || !editor;
   $("#boardLink").hidden = !signedIn;
   $("#adminLink").hidden = !signedIn || !admin;
@@ -464,7 +460,6 @@ async function loadData({ quiet = false } = {}) {
       collections.renderLoader();
       andon.renderLoader();
       sources.renderLoader();
-      if (S.view === "tagging") tagging.render();
       if (S.view === "files") files.render();
     });
     S.data = res.data;
