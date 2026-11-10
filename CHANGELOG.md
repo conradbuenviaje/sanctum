@@ -9,6 +9,12 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.7.1 · Nov 10, 2026
+
+- **Fixed:** the Files, Queue and Settings pages showed nothing (since 2.7.0): they were inside
+  the Admin page, so they were hidden with it.
+- **Removed:** the Tagging page from Polaris. Tags are still added from an audit card's **Hide ▾**.
+
 ## 2.7.0 · Nov 10, 2026
 
 - **Polaris's Data Audit, up to Polaris 1.14.1.** Sanctum split off from Polaris 1.8.0; everything
@@ -21,7 +27,7 @@ two numbers differ.
   - **Briefs and PARs are one Universe tab** (1.9.0), and Approved invoices ask for the Collection Date.
   - **Hide ▾ › Mark as another tag…** on audit cards, PM and CE cards included (1.13.1); a column the
     Audit needs that's missing is named (1.9.1).
-  - New **Tagging** and **Files** pages (1.13.0, 1.14.0), for admins and editors like Data Audit.
+  - New **Files** page (1.14.0) and Tagging (1.13.0, removed in 2.7.1), for admins and editors like Data Audit.
   - One login shared across tabs, kept until it ends about 2 hours after logging in (1.11.0), and
     ANDON rows open at once (1.12.1).
 - **Open Items asks for the same fields.** Three new starting rules: the Universe's **PM** (Tribe Lead
