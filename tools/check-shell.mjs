@@ -91,6 +91,18 @@ function run() {
   }
 
   console.log("Page");
+  {
+    // Every page (<section class="view …">) sits straight in <main>: one nested in another
+    // page is hidden with it (Tagging and Files were, inside Admin, after a merge).
+    let depth = 0, nested = [];
+    for (const m of html.matchAll(/<(\/?)section\b([^>]*)>/g)) {
+      if (m[1]) { depth--; continue; }
+      const view = (m[2].match(/class="view\b[^"]*"[^>]*data-view="([^"]+)"/) || [])[1];
+      if (view && depth > 0) nested.push(view);
+      depth++;
+    }
+    ok(!nested.length && depth === 0, nested.length ? `pages nested inside another page: ${nested.join(", ")}` : "every page sits straight in <main>");
+  }
   ok(/setTimeout\(function \(\) \{\s*if \(document\.documentElement\.hasAttribute\("data-booted"\)\)/.test(html), "boot watchdog is in index.html");
   ok(/dataset\.booted\s*=/.test(readFileSync(join(ROOT, "js", "app.js"), "utf8")), "app.js tells the watchdog it started");
   ok(/<main[^>]*\bid="main"/.test(html), "main#main");
