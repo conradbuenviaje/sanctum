@@ -150,7 +150,7 @@ To set it up:
 2. In the GitHub repository's *Settings > Secrets and variables > Actions*, add
    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` and (optional) `SANCTUM_URL`.
    **Lark:** with no Lark secret set, the digest gets its token from the hosted connection
-   service's `GET /token` (Polaris's Lark app, the service's documented "Quick Start", see
+   service's `GET /token` (Polaris's Lark app, the service's old "Quick Start", see
    [mineski-stephen/lark-api-test](https://github.com/mineski-stephen/lark-api-test);
    [`tools/service-token.mjs`](tools/service-token.mjs)). To read as another app instead, add
    `LARK_APP_ID` and `LARK_APP_SECRET`: that app needs `bitable:app` in a published version and
@@ -667,7 +667,8 @@ Polaris doesn't keep a copy of the tables: every load reads them fresh from Lark
  Your browser: a static page (GitHub Pages, no build step, ES modules)
    │  every Lark call carries YOUR login (Authorization: Bearer), so Lark applies your own permissions
    ▼
- Connection service = the shared Lark proxy (Render)  ──▶  Lark Open API (open.larksuite.com)
+ Connection service = the shared Lark proxy  ──▶  Lark Open API (open.larksuite.com)
+   on Cloudflare (used first, never sleeps) and Render (the backup), same code and settings;
    adds the app secret ONLY to the login code exchange
  Lark Base is the database. There is no other server and no other database.
 ```

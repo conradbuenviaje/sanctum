@@ -140,8 +140,14 @@ test("awake means the right service, then the right version", () => {
   assert.equal(old.state, "outdated");
   assert.equal(old.detail, `v0.9.0, needs ${want.min}`);
   // a CORS list without Authorization: an old proxy that looks awake and then fails every real request
-  const noAuth = serviceVerdict({ service: "lark-cors-proxy", version: "1.0.0", cors: { allow_headers: ["Content-Type"] } }, want);
+  const noAuth = serviceVerdict({ service: "lark-cors-proxy", version: want.min, cors: { allow_headers: ["Content-Type"] } }, want);
   assert.equal(noAuth.state, "outdated");
   assert.match(noAuth.detail, /doesn't allow Authorization/);
-  assert.equal(serviceVerdict({ service: "lark-cors-proxy", version: "1.0.0", cors: { allow_headers: ["content-type", "authorization"] } }, want).state, "awake");
+  assert.equal(serviceVerdict({ service: "lark-cors-proxy", version: want.min, cors: { allow_headers: ["content-type", "authorization"] } }, want).state, "awake");
+});
+
+test("the Lark proxy has a backup: Cloudflare first, then Render, both 2.0.0 or newer", () => {
+  assert.deepEqual(SERVICES.lark.urls, ["https://lark-proxy.stephen-lin.workers.dev", "https://lark-proxy-dwiw.onrender.com"]);
+  assert.equal(SERVICES.lark.min, "2.0.0");
+  for (const u of SERVICES.lark.urls) assert.ok(isServiceUrl(u), u);
 });

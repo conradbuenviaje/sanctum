@@ -29,19 +29,18 @@
   import { runE2E, runAndonE2E } from "./e2e-core.js";
   import { APP, TABLE_LINKS } from "../js/config.js";
   import { parseBaseLink } from "../js/ops.js";
-  import { larkUrl } from "../js/settings.js";
+  import { wake, proxyBase } from "../js/net.js";
 
   const out = document.getElementById("out");
   const log = (line) => { out.textContent += line + "\n"; };
   const read = (area, key) => { try { return JSON.parse(window[area + "Storage"].getItem(key)); } catch { return null; } };
-  const proxy = larkUrl();   // the hosted service, or the address saved in Settings > Advanced
   const tok = read("session", "polaris.auth.token");
   const T = Object.fromEntries(Object.entries(TABLE_LINKS).map(([k, l]) => [k, parseBaseLink(l)]));
 
   async function call(method, url, body) {
     const init = { method, headers: { Authorization: "Bearer " + tok.access_token } };
     if (method !== "GET") { init.headers["Content-Type"] = "application/json; charset=utf-8"; init.body = JSON.stringify(body || {}); }
-    const res = await fetch(`${proxy}/proxy?url=${encodeURIComponent(url)}`, init);
+    const res = await fetch(`${proxyBase()}/proxy?url=${encodeURIComponent(url)}`, init);   // the proxy that answered wake()
     const j = JSON.parse(await res.text());
     if (Number(j.code) !== 0) { const e = new Error(`Lark ${j.code}: ${j.msg}`); e.json = j; throw e; }
     return j;
@@ -55,6 +54,7 @@
     btn.disabled = true;
     log(`js/config.js has APP.env = "${APP.env}", not "test". This check only runs on the test copy.`);
   }
+  wake();   // finds the proxy that answers (Cloudflare, else Render), or the one saved in Settings > Advanced
   let armed = false;
   btn.addEventListener("click", async () => {
     if (!armed) {   // two clicks, no popup: the first only arms it
