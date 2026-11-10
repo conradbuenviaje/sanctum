@@ -4,8 +4,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { RULES } from "../js/config.js";
-import { saveInvoiceDetails, fillGaps, createRecord, AlreadyDone, columnsToRead, schemaSpec, saveEdit, EditConflict, setTag, loadEverything } from "../js/ops.js";
-import { collectionRow } from "../js/sync.js";
+import { saveInvoiceDetails, fillGaps, createRecord, AlreadyDone, columnsToRead, schemaSpec, saveEdit, EditConflict, setTag, loadEverything, syncPm } from "../js/ops.js";
+import { collectionRow, pmWrites } from "../js/sync.js";
 import { LarkError, isUncertain } from "../js/errors.js";
 
 const seg = (text) => [{ type: "text", text }];
@@ -233,4 +233,41 @@ test("loading: only the Universe is required; a table this login can't read swit
   // A login that has ended still ends the page, whichever table noticed.
   const dead = async () => { throw Object.assign(new Error("login ended"), { deadToken: true }); };
   await assert.rejects(loadEverything(dead, { brief: tables.brief }, RULES), /login ended/);
+});
+
+test("PM sync: both tables get the one PM; a PM changed meanwhile in either stops it before anything is written", async () => {
+  const TT = { universe: { app: "APP1", table: "tblUni" }, andon: { app: "APP2", table: "tblAnd" } };
+  const person = (id, name) => [{ id, name }];
+  const defsOf = (t) => [{ field_name: t === "universe" ? "PM" : "PM (LEAD)", type: 11 }];
+  const fresh = () => [
+    { record_id: "u1", fields: { "PM": person("ou_a", "Ana") } },
+    { record_id: "a1", fields: { "PM (LEAD)": person("ou_b", "Ben") } },
+    { record_id: "a2", fields: {} },                                     // a second ANDON row, blank
+  ];
+  const rowsOf = (data) => [{ table: "universe", rowId: "u1", loaded: { PM: data[0].fields.PM } },
+                            { table: "andon", rowId: "a1", loaded: { "PM (LEAD)": data[1].fields["PM (LEAD)"] } },
+                            { table: "andon", rowId: "a2", loaded: {} }];
+  const writes = pmWrites({ id: "ou_b", name: "Ben" }, RULES);
+  assert.deepEqual(writes, { universe: { PM: [{ id: "ou_b" }] }, andon: { "PM (LEAD)": [{ id: "ou_b" }] } });
+
+  // Ben everywhere: a1 already has him, so only u1 and a2 are written
+  let data = fresh(), lark = fakeLark(data);
+  const res = await syncPm(lark.call, TT, rowsOf(data), writes, defsOf);
+  assert.deepEqual(lark.writes().map(w => w.body.records[0].record_id), ["u1", "a2"]);
+  assert.deepEqual(res.results.map(r => r.table), ["universe", "andon"]);
+  assert.deepEqual(res.mismatches, []);
+
+  // someone changed ANDON's PM meanwhile: nothing is written, not even the Universe
+  data = fresh();
+  const rows = rowsOf(data);
+  data[1].fields["PM (LEAD)"] = person("ou_c", "Cara");
+  lark = fakeLark(data);
+  await assert.rejects(syncPm(lark.call, TT, rows, writes, defsOf), (err) => err instanceof EditConflict && /ANDON's PM \(LEAD\)/.test(err.message));
+  assert.equal(lark.writes().length, 0);
+
+  // already the same everywhere: nothing to do
+  data = [{ record_id: "u1", fields: { "PM": person("ou_b", "Ben") } }, { record_id: "a1", fields: { "PM (LEAD)": person("ou_b", "Ben") } }];
+  lark = fakeLark(data);
+  await assert.rejects(syncPm(lark.call, TT, [{ table: "universe", rowId: "u1", loaded: data[0].fields }, { table: "andon", rowId: "a1", loaded: data[1].fields }], writes, defsOf),
+    (err) => err instanceof AlreadyDone);
 });

@@ -137,7 +137,8 @@ test("who: the role's holder, else the fallback, else unassigned", () => {
 function fixture() {
   const bd = [user("ou_bd", "Ben BD")], am = [user("ou_am", "Ana AM")], pm = [user("ou_pm", "Pia PM")];
   const full = { Client: "Kestrel Motors", "RFP Received Date": MANILA("2025-03-01"), "Amount (VAT-Ex.) (PHP)": 100,
-                 "VAT%": "12%", "Project Start": 1, "Project End": 2, "Project Description": seg("x") };
+                 "VAT%": "12%", "Project Start": 1, "Project End": 2, "Project Description": seg("x"),
+                 PM: pm, "Internal CE (Sheet)": { link: "https://ce", text: "CE" } };
   return {
     universe: [
       // New brief, no BD: BD is asked (Universe Keeper → fallback AM), and its ANDON row is missing.
@@ -155,8 +156,8 @@ function fixture() {
       rec("u6", { "Project Code": "2025TEG-P0006", Project: "Hidden", Status: "For Pitching", Tags: "Hidden" }),
     ],
     andon: [
-      rec("a2", { "Project Code": "2025TEG-P0002", "PM (LEAD)": [], TRIBE: "Alpha", "Business Unit": "X", Tools: ["Y"], "Event Start": 1, "Event End": 2 }),
-      rec("a3", { "Project Code": "2026TEG-P0003", "PM (LEAD)": pm, TRIBE: "Alpha", "Business Unit": "X", Tools: ["Y"], "Event Start": 1, "Event End": 2,
+      rec("a2", { "Project Code": "2025TEG-P0002", "PM (LEAD)": [], TRIBE: "Alpha", "Business Unit": "X", Tools: ["Y"], "Event Start": 1, "Event End": 2, "Working CE": { link: "https://ce", text: "CE" } }),
+      rec("a3", { "Project Code": "2026TEG-P0003", "PM (LEAD)": pm, TRIBE: "Alpha", "Business Unit": "X", Tools: ["Y"], "Event Start": 1, "Event End": 2, "Working CE": { link: "https://ce", text: "CE" },
                   Approval: { link: "https://x", text: "202601010001" } }),
     ],
     collections: [],
@@ -383,4 +384,15 @@ test("editors: admins and anyone tagged in a role or as a tribe lead; Lark ids d
   assert.equal(isEditor(cfg, { id: "ou_y", name: "Andew James Sarmiento" }), false);              // same name, other id: not them
   assert.equal(isEditor(cfg, { id: "ou_z", name: "Random Person" }), false);
   assert.equal(isAdmin(cfg, { id: "ou_tl", name: "Andew James Sarmiento" }), false);              // editing isn't the Admin page
+});
+
+test("rules: starting rules the saved ones lack are offered, each after the rule before it", async () => {
+  const { rulesMissingFromDefaults } = await import("../js/accountability.js");
+  const defaults = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }];
+  assert.deepEqual(rulesMissingFromDefaults([{ id: "a" }, { id: "d" }], defaults).map(m => [m.rule.id, m.after]), [["b", "a"], ["c", "a"]]);
+  assert.deepEqual(rulesMissingFromDefaults([{ id: "c" }], defaults).map(m => [m.rule.id, m.after]), [["a", null], ["b", null], ["d", "c"]]);
+  assert.deepEqual(rulesMissingFromDefaults(defaults, defaults), []);
+  // Sanctum's own starting rules include Polaris's PM and CE link checks
+  const ids = ACCOUNTABILITY.rules.map(r => r.id);
+  for (const id of ["pmuni", "celink", "workce"]) assert.ok(ids.includes(id), id);
 });

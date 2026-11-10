@@ -9,14 +9,14 @@
 
 /* version: bump it with every release and add an entry to CHANGELOG.md (newest first, same number).
    The top bar shows it beside the name, so people can see at a glance which version they're running. */
-export const APP = { name: "Sanctum", key: "polaris", version: "2.6.1", env: "live" };   // env: "live" | "test"
+export const APP = { name: "Sanctum", key: "polaris", version: "2.7.0", env: "live" };   // env: "live" | "test"
 export const ENV_LABEL = APP.env === "test" ? "Test copy" : "";         // shown in the header, never a gate
 
 /* The connection service: the shared Lark proxy (Render). `service` is the name its
    GET / answers with; `min` and `headers` are checked once it reports a version. */
 export const SERVICES = {
-  // The Lark proxy runs in two places, tried in this order: Cloudflare Workers (never sleeps),
-  // then Render (the backup). Both must be in index.html's connect-src. (From Polaris 1.12.0.)
+  // The Lark proxy (tech/lark-proxy) runs in two places, tried in this order: Cloudflare Workers
+  // (never sleeps), then Render (the backup). Both must be in index.html's connect-src.
   lark: { urls: ["https://lark-proxy.stephen-lin.workers.dev", "https://lark-proxy-dwiw.onrender.com"],
           service: "lark-cors-proxy", min: "2.0.0", headers: ["Authorization"] },
 };
@@ -26,7 +26,7 @@ export const LARK = {
   scopes: "bitable:app",
   api: "https://open.larksuite.com/open-apis",
   authorize: "https://accounts.larksuite.com/open-apis/authen/v1/authorize",
-  maxUploadMb: 10,       // must match the Lark proxy's MAX_BODY_BYTES
+  maxUploadMb: 20,       // Lark's upload_all takes up to 20 MiB; the proxy's MAX_BODY_BYTES must be above it
 };
 
 /* One Lark link per table, exactly as copied from the address bar. */
@@ -125,6 +125,20 @@ export const RULES = {
   // PAR's Request No. (its number, linking to the approval) in `field`, a link
   // column, while it's blank: one card per row, pushed like a PAR to the Universe.
   andonApproval: { field: "Approval" },
+  // Universe tab: a Universe row whose `to` (an attachment column) is blank, and whose
+  // Project Brief links to its files in Lark Approval (`link`, a URL column; Polaris
+  // can't read Lark Approval itself), gets a card: the person opens the link,
+  // downloads the files, and uploads them through Polaris. Every status counts; to
+  // leave some out, list them in `skipStatuses` (e.g. ["Stalled", "Lost", "Archived"]).
+  briefFiles: { link: "Attachment (Project Brief, Pitch Deck)", to: "Other Attachments", skipStatuses: [] },
+  // The audit: a project's PM must be the same in the Universe (`universe`) and in
+  // its ANDON row(s) (`andon`). If they differ or either is blank, it gets an Audit
+  // card whose Fill sets one PM in both; the Fill is refused while it's blank.
+  pmSync: { universe: "PM", andon: "PM (LEAD)" },
+  // The same for the CE: one link (both URL columns) in the Universe (`universe`) and in
+  // its ANDON row(s) (`andon`). Different or blank: an Audit card whose Fill puts one
+  // link in both (the link must start with https://).
+  ceSync: { universe: "Internal CE (Sheet)", andon: "Working CE" },
   // Custom tags: "Mark as No Revenue", "Mark as Hidden"… under an audit card's Hide.
   // The tags are the rows of the Variables table whose `nameColumn` is `variable`
   // (one row per tag, the tag in `valueColumn`); Settings adds and removes them.
@@ -140,6 +154,21 @@ export const RULES = {
     tables: ["universe"],
     nameColumn: "Variable",
     valueColumn: "Value",
+  },
+
+  // The Files page: the attachment columns whose files go in the zip, and how each
+  // file is named there: {prefix}_{project code}_{project name}_{n}.{its extension}, or
+  // with `name` set, those parts instead ("code", "name", "invoice" = the Invoice Number).
+  filesPage: {
+    universe: [
+      { field: "Signed CE (PDF)", prefix: "signed_ce", label: "Signed CE" },
+      { field: "Other Attachments", prefix: "other", label: "Other attachments" },
+    ],
+    // {project code}_{invoice number}_{n}.{ext}
+    collections: [{ field: "Invoice", prefix: "invoice", label: "Invoices", name: ["code", "invoice"] }],
+    // Approvals: the link columns (URL) of the brief, PAR and invoice request tables
+    // whose name has this in it. They open the files in Lark Approval, not as a download.
+    approvalColumns: /attach/i,
   },
 
   // Date-only fields (RFP Received Date) are stored as midnight in this offset.
@@ -226,11 +255,16 @@ export const ACCOUNTABILITY = {
     { id: "andon",     table: "andon",       field: "@row",                   from: STAGE.brief,   lost: false, responsible: "AM",              accountable: "Ops Lead" },
     { id: "pm",        table: "andon",       field: "PM (LEAD)",              from: STAGE.brief,   lost: false, responsible: "Tribe Lead",      accountable: "Project Director" },
     { id: "tribe",     table: "andon",       field: "TRIBE",                  from: STAGE.brief,   lost: false, responsible: "Tribe Lead",      accountable: "Project Director" },
+    // The Universe's PM must be there too, the same as ANDON's (Polaris 1.9.0's audit).
+    { id: "pmuni",     table: "universe",    field: "PM",                     from: STAGE.brief,   lost: false, responsible: "Tribe Lead",      accountable: "Project Director" },
     { id: "amount",    table: "universe",    field: "Amount (VAT-Ex.) (PHP)", from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "BD" },
     { id: "vat",       table: "universe",    field: "VAT%",                   from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "BD" },
     { id: "start",     table: "universe",    field: "Project Start",          from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "AM" },
     { id: "end",       table: "universe",    field: "Project End",            from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "AM" },
     { id: "desc",      table: "universe",    field: "Project Description",    from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "AM" },
+    // The CE link, in both tables (Polaris 1.13.0's audit: the two must be the same link).
+    { id: "celink",    table: "universe",    field: "Internal CE (Sheet)",    from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "BD" },
+    { id: "workce",    table: "andon",       field: "Working CE",             from: STAGE.pitch,   lost: false, responsible: "AM",              accountable: "BD" },
     { id: "bu",        table: "andon",       field: "Business Unit",          from: STAGE.pitch,   lost: false, responsible: "PM",              accountable: "AM" },
     { id: "tools",     table: "andon",       field: "Tools",                  from: STAGE.pitch,   lost: false, responsible: "PM",              accountable: "AM" },
     { id: "evstart",   table: "andon",       field: "Event Start",            from: STAGE.pitch,   lost: false, responsible: "PM",              accountable: "AM" },

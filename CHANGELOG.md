@@ -9,6 +9,28 @@ or links stop working), add an entry here with the same number and the date,
 and say what changed in the team's words. `npm run check:shell` fails if the
 two numbers differ.
 
+## 2.7.0 · Nov 10, 2026
+
+- **Polaris's Data Audit, up to Polaris 1.14.1.** Sanctum split off from Polaris 1.8.0; everything
+  Polaris added since is now here too:
+  - **PM must match** (1.9.0): a project whose PM in the Universe and PM (LEAD) in ANDON differ, or is
+    blank in either, gets an Audit card; **Fill** sets one PM in both.
+  - **CE link must match** (1.13.0): the Universe's Internal CE (Sheet) and ANDON's Working CE must be
+    the same link; **Fill** puts one link in both.
+  - **Other Attachments** (1.10.0): projects with none whose Project Brief has files, to upload them.
+  - **Briefs and PARs are one Universe tab** (1.9.0), and Approved invoices ask for the Collection Date.
+  - **Hide ▾ › Mark as another tag…** on audit cards, PM and CE cards included (1.13.1); a column the
+    Audit needs that's missing is named (1.9.1).
+  - New **Tagging** and **Files** pages (1.13.0, 1.14.0), for admins and editors like Data Audit.
+  - One login shared across tabs, kept until it ends about 2 hours after logging in (1.11.0), and
+    ANDON rows open at once (1.12.1).
+- **Open Items asks for the same fields.** Three new starting rules: the Universe's **PM** (Tribe Lead
+  responsible, Project Director accountable), and the CE link in both tables, **Internal CE (Sheet)**
+  and **Working CE** (from pitching; AM responsible, BD accountable). Rules already saved on the
+  Admin page stay as they are: the Rules section offers **Add these 3**, then Save changes.
+  A PM or CE link that's filled in but *different* between the tables is on the Data Audit tab,
+  not on Open Items (which lists blanks).
+
 ## 2.6.1 · Nov 9, 2026
 
 - **The connection service moved to Cloudflare** (from Polaris 1.12.0). Sanctum now uses the Lark

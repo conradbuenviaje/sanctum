@@ -9,12 +9,13 @@ import {
   indexUniverse, indexCollections, briefCards, parCards, collectionCards, collectionsChange,
   universeFromBrief, verifyWritten, similarity, vatMentions,
   peoplePool, universeView, shortName, andonFromBrief, collectionsView, collectionRow, invoiceDetailsPatch,
-  auditCards, auditPatch, parseDay, fillPlan, invoiceChangedSince, draftsToJSON, draftsFromJSON, queueToJSON, queueFromJSON, cellText, parApprovals, approvalCards, attachmentRequest, attachmentLinkRequest, attachmentLink, isWonProject, auditMissing, monthOf,
+  auditCards, auditPatch, parseDay, fillPlan, invoiceChangedSince, draftsToJSON, draftsFromJSON, queueToJSON, queueFromJSON, cellText, parApprovals, approvalCards, pmCards, fileCards, attachmentRequest, attachmentLinkRequest, attachmentLink, isWonProject, auditMissing, monthOf,
   needsSignedCe, auditFilesMissing, isBlank,
   matchesQuery, andonView, canEditField, editChanges, editWrite, editCheck, editKey, writeValueOf,
   tagsOf, tagsWith, tagsWithout, variableColumns, customTagsFrom, customTagOf, tagGroups,
   isLostProject, requiredMessage, sourceView, statusChange,
   filterIndex, cardFacets, passesFilters, filterChoices, NONE, closestMatches,
+  ceCards, ceWrites, linkIn, validLink, lookalikeTags, taggingView, UNTAGGED, pickTag,
 } from "../js/sync.js";
 import { writableOnly } from "../js/ops.js";
 
@@ -252,7 +253,7 @@ test("won project → a new For Invoicing row with Amount (VAT-Inc.)", () => {
                "Pending Invoice Request Approval");
 });
 
-test("request filed → its row becomes Pending: the request number and status only", () => {
+test("request filed → its row becomes Pending, with the request's amount and currency", () => {
   const { cards } = life();
   const by = Object.fromEntries(cards.map(c => [c.id, c]));
   // Two tranches, two requests: each takes the row closest to its amount.
@@ -261,10 +262,15 @@ test("request filed → its row becomes Pending: the request number and status o
   const ch = collectionsChange(by.iB1, {}, OPTS, RULES);
   assert.deepEqual(ch, {
     mode: "update", rowId: "cB1", action: "attach",
-    fields: { "Invoice Request": 202610010001, "Status": "Pending Invoice Request Approval" },
-    before: { "Invoice Request": null, "Status": "For Invoicing" },
+    fields: { "Invoice Request": 202610010001, "Status": "Pending Invoice Request Approval", "Invoice Amount": 210000 },
+    before: { "Invoice Request": null, "Status": "For Invoicing", "Invoice Amount": 200000 },
     expect: { status: "For Invoicing", ir: "" },
   });
+  assert.match(by.iB1.notes.join(" "), /“Bravo \(Tranche 1\)” is PHP 200,000; it becomes the request's PHP 210,000\./);
+  // A request in USD on a row the Universe put in PHP: both change.
+  const usd = { ...by.iB1, amount: 4000, currency: "USD" };
+  assert.deepEqual(collectionsChange(usd, {}, OPTS, RULES).fields,
+    { "Invoice Request": 202610010001, "Status": "Pending Invoice Request Approval", "Invoice Amount": 4000, "Currency": "USD" });
   // Or as a new row, if that's what the user picks.
   const fresh = collectionsChange(by.iB1, { targetId: "new" }, OPTS, RULES);
   assert.equal(fresh.mode, "create");
@@ -1194,4 +1200,142 @@ test("attachments: download addresses carry the Base's permission context", () =
   assert.equal(attachmentLink(json, "boxA"), "https://dl.example/boxA");
   assert.equal(attachmentLink({ data: { tmp_download_urls: [{ file_token: "boxA", tmp_download_url: "javascript:alert(1)" }] } }, "boxA"), "");
   assert.equal(attachmentLink(null, "boxA"), "");
+});
+
+test("PM audit: a project whose PM differs between the Universe and ANDON, or is blank in either, gets a card", () => {
+  const p = (id, name) => [{ id, name }];
+  const uni = [
+    rec("u1", { "Project Code": seg("2026TEG-P0900"), "Project": seg("Same"), "PM": p("ou_a", "Ana") }),
+    rec("u2", { "Project Code": seg("2026TEG-P0901"), "Project": seg("Differs"), "PM": p("ou_a", "Ana") }),
+    rec("u3", { "Project Code": seg("2026TEG-P0902"), "Project": seg("Universe blank") }),
+    rec("u4", { "Project Code": seg("2026TEG-P0903"), "Project": seg("ANDON blank"), "PM": p("ou_a", "Ana") }),
+    rec("u5", { "Project Code": seg("2026TEG-P0904"), "Project": seg("Not in ANDON") }),
+    rec("u6", { "Project Code": seg("2026TEG-P0905"), "Project": seg("One of two ANDON rows differs"), "PM": p("ou_a", "Ana") }),
+  ];
+  const andon = [
+    rec("a1", { "Project Code": seg("2026TEG-P0900"), "PM (LEAD)": p("ou_a", "Ana") }),
+    rec("a2", { "Project Code": seg("2026TEG-P0901"), "PM (LEAD)": p("ou_b", "Ben") }),
+    rec("a3", { "Project Code": seg("2026TEG-P0902"), "PM (LEAD)": p("ou_b", "Ben") }),
+    rec("a4", { "Project Code": seg("2026TEG-P0903") }),
+    rec("a5", { "Project Code": seg("2026TEG-P0905"), "PM (LEAD)": p("ou_a", "Ana") }),
+    rec("a6", { "Project Code": seg("2026TEG-P0905"), "PM (LEAD)": p("ou_c", "Cara") }),
+  ];
+  const { cards } = pmCards(uni, andon, RULES);
+  const by = Object.fromEntries(cards.map(c => [c.rowId, c]));
+  assert.deepEqual(Object.keys(by).sort(), ["u2", "u3", "u4", "u6"]);       // same PM, or not in ANDON: no card
+  assert.deepEqual(by.u2.suggestion.map(u => u.id), ["ou_b"]);              // ANDON's PM is suggested
+  assert.deepEqual(by.u4.suggestion.map(u => u.id), ["ou_a"]);              // ANDON blank: the Universe's
+  assert.deepEqual(by.u6.andonRows, ["a5", "a6"]);                           // every ANDON row gets the PM
+  assert.deepEqual(by.u2.loaded.andon.a2, { "PM (LEAD)": p("ou_b", "Ben") });
+  // a table without its PM column: no cards
+  assert.equal(pmCards(uni, andon, RULES, { fields: { universe: [{ field_name: "Project" }] } }).cards.length, 0);
+});
+
+test("brief files: a blank Other Attachments gets a card linking to the brief's files in Lark Approval", () => {
+  const seg = (text) => [{ type: "text", text }];
+  const link = (n) => ({ link: `https://www.larksuite.com/approval/admin/previewAttachment?key=K${n}`, text: `${n} attachment(s)`, type: "url" });
+  const L = "Attachment (Project Brief, Pitch Deck)";
+  const briefs = [
+    { record_id: "b1", fields: { "Project Code": seg("2026TEG-P0001"), "Status": "Approved", "Submitted at": 100, [L]: link(1) } },
+    { record_id: "b2", fields: { "Project Code": seg("2026teg-p0001"), "Status": "Approved", "Submitted at": 200, [L]: link(2) } },   // newer: this one
+    { record_id: "b3", fields: { "Project Code": seg("2026TEG-P0002"), "Status": "Approved", "Submitted at": 300, [L]: link(3) } },
+    { record_id: "b4", fields: { "Project Code": seg("2026TEG-P0003"), "Status": "Recalled", "Submitted at": 400, [L]: link(4) } },   // voided
+    { record_id: "b5", fields: { "Project Code": seg("2026TEG-P0004"), "Status": "Approved", "Submitted at": 500 } },                 // no link
+    { record_id: "b6", fields: { "Project Code": seg("2026TEG-P0005"), "Status": "Approved", "Submitted at": 600, [L]: link(6) } },
+  ];
+  const universe = [
+    { record_id: "u1", fields: { "Project Code": seg("2026TEG-P0001"), "Project": seg("Summer Cup"), "Status": "Signed CE" } },
+    { record_id: "u2", fields: { "Project Code": seg("2026TEG-P0002"), "Other Attachments": [{ file_token: "x", name: "a.pdf", size: 1 }] } },   // has files
+    { record_id: "u3", fields: { "Project Code": seg("2026TEG-P0003") } },
+    { record_id: "u4", fields: { "Project Code": seg("2026TEG-P0004") } },
+    { record_id: "u5", fields: { "Project Code": seg("2026TEG-P0005"), "Status": "Lost", "Other Attachments": [] } },   // lost projects count too
+  ];
+  const { cards } = fileCards(universe, briefs, RULES);
+  assert.deepEqual(cards.map(c => c.rowId), ["u5", "u1"]);
+  // …unless their status is left out
+  const skip = { ...RULES, briefFiles: { ...RULES.briefFiles, skipStatuses: ["Lost"] } };
+  assert.deepEqual(fileCards(universe, briefs, skip).cards.map(c => c.rowId), ["u1"]);
+  const c = cards[1];
+  assert.equal(c.kind, "files");
+  assert.equal(c.link, link(2).link);
+  assert.equal(c.label, "2 attachment(s)");
+  assert.equal(c.field, "Other Attachments");
+  // a table without its column gives no cards
+  const fields = { universe: [{ field_name: "Project Code" }], brief: [{ field_name: L }] };
+  assert.equal(fileCards(universe, briefs, RULES, { fields }).cards.length, 0);
+});
+
+test("CE audit: the Universe's Internal CE (Sheet) and ANDON's Working CE must be the same link", () => {
+  const seg = (text) => [{ type: "text", text }];
+  const url = (link) => ({ link, text: link, type: "url" });
+  const A = "https://docs.google.com/spreadsheets/d/AAA/edit", B = "https://docs.google.com/spreadsheets/d/BBB/edit";
+  const U = RULES.ceSync.universe, N = RULES.ceSync.andon;
+  const universe = [
+    { record_id: "u1", fields: { "Project Code": seg("2026TEG-P0001"), "Project": seg("Same"), [U]: url(A) } },
+    { record_id: "u2", fields: { "Project Code": seg("2026TEG-P0002"), "Project": seg("Different"), [U]: url(A) } },
+    { record_id: "u3", fields: { "Project Code": seg("2026TEG-P0003"), "Project": seg("Universe blank") } },
+    { record_id: "u4", fields: { "Project Code": seg("2026TEG-P0004"), "Project": seg("Both blank") } },
+    { record_id: "u5", fields: { "Project Code": seg("2026TEG-P0005"), "Project": seg("Not in ANDON") } },
+    { record_id: "u6", fields: { "Project Code": seg("2026TEG-P0006"), "Project": seg("Trailing slash"), [U]: url(A + "/") } },
+  ];
+  const andon = [
+    { record_id: "a1", fields: { "Project Code": seg("2026TEG-P0001"), [N]: url(A) } },
+    { record_id: "a2", fields: { "Project Code": seg("2026TEG-P0002"), [N]: url(B) } },
+    { record_id: "a3", fields: { "Project Code": seg("2026TEG-P0003"), [N]: url(B) } },
+    { record_id: "a4", fields: { "Project Code": seg("2026TEG-P0004") } },
+    { record_id: "a6", fields: { "Project Code": seg("2026TEG-P0006"), [N]: url(A) } },
+  ];
+  const { cards } = ceCards(universe, andon, RULES);
+  const by = Object.fromEntries(cards.map(c => [c.rowId, c]));
+  assert.deepEqual(cards.map(c => c.rowId), ["u4", "u3", "u2"]);   // newest code first
+  assert.equal(by.u2.suggestion, B);                               // ANDON's first
+  assert.equal(by.u3.suggestion, B);
+  assert.equal(by.u4.suggestion, "");                              // both blank: pasted by hand
+  assert.deepEqual(by.u2.andonRows, ["a2"]);
+  assert.deepEqual(ceWrites(B, RULES), { universe: { [U]: { link: B, text: B } }, andon: { [N]: { link: B, text: B } } });
+  // A table without its column gives no cards.
+  assert.equal(ceCards(universe, andon, RULES, { fields: { universe: [{ field_name: "Project Code" }], andon: [{ field_name: N }] } }).cards.length, 0);
+  // Tagged on the Universe row: to its tag's group. Hidden on this device: counted, until a link changes.
+  const tagged = universe.map(r => (r.record_id === "u3" ? { ...r, fields: { ...r.fields, Tags: "Event, No Revenue" } } : r));
+  const t = ceCards(tagged, andon, RULES, { tags: ["No Revenue"], tagField: "Tags", hide: new Set([by.u4.hideKey]) });
+  assert.deepEqual(t.cards.map(c => c.rowId), ["u2"]);
+  assert.deepEqual(t.tagged.map(c => [c.rowId, c.tag]), [["u3", "No Revenue"]]);
+  assert.equal(t.hidden, 1);
+  const moved = andon.map(r => (r.record_id === "a4" ? { ...r, fields: { ...r.fields, [N]: url(B) } } : r));
+  assert.ok(ceCards(universe, moved, RULES, { hide: new Set([by.u4.hideKey]) }).cards.some(c => c.rowId === "u4"));
+  assert.equal(linkIn(url(A)), A);
+  assert.equal(linkIn(seg(A)), A);
+  assert.equal(validLink(" " + A + " "), A);
+  assert.equal(validLink("docs.google.com/x"), "");
+  assert.equal(validLink("http://x.com/a"), "");
+});
+
+test("Tagging: every project and its tags, tag counts, filters, and tags that look misspelt", () => {
+  const seg = (text) => [{ type: "text", text }];
+  const rec = (id, code, tags) => ({ record_id: id, fields: { "Project Code": seg(code), "Project": seg(`P ${id}`), "Status": "Signed CE", ...(tags ? { Tags: seg(tags) } : {}) } });
+  const records = [rec("r1", "2026TEG-P0001", "Booth,Event"), rec("r2", "2026TEG-P0003", "booth"), rec("r3", "2026TEG-P0002", ""),
+                   rec("r4", "2026TEG-P0004", "Federal Land"), rec("r5", "2026TEG-P0005", "Federal Lnad, Event")];
+  const v = taggingView(records, "Tags");
+  assert.deepEqual(v.rows.map(r => r.id), ["r5", "r4", "r2", "r3", "r1"]);
+  assert.deepEqual(v.tags.map(t => [t.tag, t.count]), [["Booth", 2], ["Event", 2], ["Federal Land", 1], ["Federal Lnad", 1]]);
+  assert.deepEqual(v.tags.find(t => t.tag === "Federal Lnad").like, ["Federal Land"]);
+  assert.deepEqual(v.tags.find(t => t.tag === "Booth").like, []);
+  assert.equal(v.untagged, 1);
+  assert.deepEqual(taggingView(records, "Tags", { tag: "BOOTH" }).rows.map(r => r.id), ["r2", "r1"]);
+  assert.deepEqual(taggingView(records, "Tags", { tag: UNTAGGED }).rows.map(r => r.id), ["r3"]);
+  assert.deepEqual(taggingView(records, "Tags", { query: "event p0005" }).rows.map(r => r.id), ["r5"]);
+  assert.deepEqual(lookalikeTags("federal-land", ["Federal Land", "Event"]), ["Federal Land"]);
+  assert.deepEqual(lookalikeTags("Evnt", ["Event", "Booth"]), ["Event"]);
+  assert.deepEqual(lookalikeTags("Expo", ["Event", "Booth"]), []);
+});
+
+test("pickTag: a custom tag in any case, a new tag spelled as used, lookalikes, bad input", () => {
+  const custom = ["No Revenue", "Hidden"], inUse = ["Event", "Federal Land", "No Revenue"];
+  assert.deepEqual(pickTag("  no   revenue ", custom, inUse), { tag: "No Revenue", isNew: false, like: [] });
+  assert.deepEqual(pickTag("event", custom, inUse), { tag: "Event", isNew: true, like: [] });
+  assert.deepEqual(pickTag("Federal Lnad", custom, inUse), { tag: "Federal Lnad", isNew: true, like: ["Federal Land"] });
+  assert.deepEqual(pickTag("Hiden", custom, inUse).like, ["Hidden"]);
+  assert.deepEqual(pickTag("On Hold", custom, inUse), { tag: "On Hold", isNew: true, like: [] });
+  assert.ok(pickTag("   ", custom, inUse).error);
+  assert.ok(pickTag("A, B", custom, inUse).error);
 });

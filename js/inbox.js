@@ -3,21 +3,21 @@
 
 import { RULES, LARK } from "./config.js";
 import { TABLE_TITLES, pushBrief, pushPar, pushCollections, pushAndon, setIgnore, newClientToken, writableOnly, fillGaps,
-         saveEdit, findRecord, setTag } from "./ops.js";
+         saveEdit, findRecord, setTag, syncPm } from "./ops.js";
 import {
   universeFromBrief, collectionsChange, stepStatus, parAfterAdding, defaultVat, vatMentions,
-  people, plain, andonFromBrief, auditPatch, auditMissing, auditFilesMissing, monthOf, clean, editChanges, editWrite,
-  tagsWith, tagsWithout, requiredMessage, FILTER_KEYS, NONE, passesFilters, filterChoices, closestMatches,
+  people, plain, pmWrites, ceWrites, validLink, andonFromBrief, auditPatch, auditMissing, auditFilesMissing, monthOf, clean, editChanges, editWrite,
+  tagsWith, tagsWithout, tagsOf, pickTag, requiredMessage, FILTER_KEYS, NONE, passesFilters, filterChoices, closestMatches,
 } from "./sync.js";
 import { uploadSizeProblem } from "./errors.js";
-import { $, h, ic, toast, fmt, flash, copyable, store, collapse, busy, radioKeys, openMenu } from "./ui.js";
+import { $, h, ic, toast, fmt, flash, copyable, store, collapse, busy, radioKeys, openMenu, confirmSheet } from "./ui.js";
 import { copyableText, dateField } from "./polaris-ui.js";
 import { createRowDoc } from "./rowdoc.js";
 import { describe, isDeadToken, isUncertain, uploadToBase } from "./net.js";
 
-const NOUN = { brief: "briefs", par: "PARs", invoice: "invoices", andon: "briefs for ANDON", audit: "projects with blanks" };
+const NOUN = { universe: "briefs or PARs", brief: "briefs", par: "PARs", invoice: "invoices", andon: "briefs for ANDON", audit: "projects with blanks" };
 // The search box says what it looks through on each tab.
-const SEARCHES = { brief: "Search code, project, AM…", par: "Search request no., code, project…",
+const SEARCHES = { universe: "Search code, project, AM, request no.…", brief: "Search code, project, AM…", par: "Search request no., code, project…",
                    invoice: "Search request no., code, project…", andon: "Search code, project, AM…",
                    audit: "Search project, code, blank columns…" };
 const STAGE_ORDER = ["universe", "brief", "par", "invoice", "collections", "andon"];
@@ -164,10 +164,12 @@ export function createInbox(ctx) {
     if (S.loadError && !S.loading && !S.quiet) {
       content = ["callout callout-err", [ic("alert"), h("div", null, describe(S.loadError)),
         h("button", { type: "button", class: "btn btn-sm", onclick: () => ctx.loadData() }, "Try again")]];
-    } else if (ctx.problemsFor(S.tab).length) {
+    } else if (tabProblems().length) {
+      // Every kind of card on this tab counts (the Audit tab's Universe, ANDON and PM
+      // cards each need their own columns), so a switched-off button always has its reason here.
       content = ["callout callout-err", [ic("alert"), h("div", null,
-        "These columns don't match what Polaris expects, so pushing is off here until they're fixed:",
-        h("ul", null, ctx.problemsFor(S.tab).map(p => h("li", null, p))))]];
+        "These columns don't match what Polaris expects, so the cards that need them can't be pushed until they're fixed:",
+        h("ul", null, tabProblems().map(p => h("li", null, p))))]];
     } else if (S.data && !ctx.canWriteFor(S.tab)) {
       content = ["callout callout-warn", [ic("alert"),
         h("div", null, "Your login can only read the tables. Log in again to allow pushing."),
@@ -175,6 +177,26 @@ export function createInbox(ctx) {
     }
     box.hidden = !content;
     if (content) { box.className = content[0]; box.replaceChildren(...content[1]); }
+  }
+
+  // The kinds of push each tab's cards make (TABLES_FOR / neededBy in app.js and ops.js).
+  const TAB_KINDS = { universe: ["brief", "par", "files"], invoice: ["invoice"], andon: ["andon", "approval"],
+                      audit: ["audit:universe", "audit:andon", "pm", "ce"] };
+  const tabProblems = () => [...new Set([S.tab, ...(TAB_KINDS[S.tab] || [])].flatMap(k => ctx.problemsFor(k)))];
+
+  /* Why a kind of push is off, in one sentence ("" when it's on). */
+  function offReason(kind) {
+    const p = ctx.problemsFor(kind);
+    if (p.length) return `Off until ${p.length === 1 ? "this is" : "these are"} fixed: ${p.join(" ")}`;
+    if (S.data && !ctx.canWriteFor(kind)) return "Your login can only read the tables. Log in again to allow pushing.";
+    return "";
+  }
+  /* A card's main button. When it's off, the wrapper says why on hover (a disabled
+     button shows no tooltip of its own), like Ignore's. */
+  function mainButton(label, kind, onclick) {
+    const why = offReason(kind);
+    const btn = h("button", { type: "button", class: "btn btn-tonal", disabled: !!why, onclick }, label);
+    return why ? h("span", { class: "btn-wrap", title: why }, btn) : btn;
   }
 
   /* Honest, staged progress: the real tables, ticked off as they arrive. */
@@ -200,7 +222,10 @@ export function createInbox(ctx) {
   function matches(c, q) {
     if (!q) return true;
     const am = c.am ? c.am.map(u => u.name).join(" ") : "";
-    const extra = c.kind === "audit" ? `${c.target} ${c.gaps.join(" ")} ${c.tag || ""}` : "";
+    const extra = c.kind === "audit" ? `${c.target} ${c.gaps.join(" ")} ${c.tag || ""}`
+      : c.kind === "files" ? `${c.field} ${c.label}`
+      : c.kind === "ce" ? `CE ${c.universeLink} ${c.andonLinks.join(" ")} ${c.tag || ""}`
+      : c.kind === "pm" ? `PM ${c.tag || ""}` : "";
     return `${c.code} ${c.name} ${c.requestNo} ${c.status} ${am} ${extra}`.toLowerCase().includes(q.toLowerCase().trim());
   }
 
@@ -225,7 +250,8 @@ export function createInbox(ctx) {
     empty.hidden = cards.length > 0;
     empty.textContent = found.length && !cards.length ? `No ${NOUN[S.tab]} match the filters.`
       : q ? `No ${NOUN[S.tab]} match "${q.trim()}".`
-      : { brief: "Every brief is in the Universe. Nice work!",
+      : { universe: "Every brief and PAR is in the Universe. Nice work!",
+          brief: "Every brief is in the Universe. Nice work!",
           par: "Every PAR is in the Universe. Nice work!",
           invoice: "Collections is up to date. Nice work!",
           andon: "Every brief is in ANDON. Nice work!",
@@ -255,6 +281,9 @@ export function createInbox(ctx) {
   function cardEl(c) {
     if (c.kind === "audit") return auditCardEl(c);
     if (c.kind === "approval") return approvalCardEl(c);
+    if (c.kind === "pm") return pmCardEl(c);
+    if (c.kind === "ce") return ceCardEl(c);
+    if (c.kind === "files") return filesCardEl(c);
     const writable = ctx.canWriteFor(c.kind);
     const notes = [];
     let meta;
@@ -310,10 +339,45 @@ export function createInbox(ctx) {
         h("button", { type: "button", class: "btn btn-tonal", disabled: !pushable, onclick: () => openSheet(c) }, "Push")));
   }
 
+  /* A project whose PM isn't the same in the Universe and ANDON (or is blank in one). */
+  function pmCardEl(c) {
+    const who = (list) => (list.length ? list.map(u => u.name || u.id).join(", ") : "blank");
+    const andon = [...new Set(c.andonPm.map(who))].join(" / ");
+    return h("article", { class: "card item" + (S.working.has(c.id) ? " is-working" : "") + (S.entering.has(c.id) ? " is-entering" : ""),
+                          "data-id": c.id },
+      h("div", { class: "item-head" },
+        copyable(c.code, { label: "project code", cls: "code" }),
+        h("span", { class: "badge badge-info" }, "PM"),
+        c.tag ? h("span", { class: "badge badge-tag" }, ic("pin"), c.tag) : null,
+        c.status ? h("span", { class: "item-date" }, c.status) : null),
+      h("h3", null, c.name || "(no name)"),
+      h("ul", { class: "notes" }, h("li", { class: "flow" },
+        h("span", { class: "flow-step" }, h("b", null, "Universe"), ` ${who(c.universePm)}`),
+        h("span", { class: "flow-step" }, h("b", null, "ANDON"), ` ${andon}`))),
+      h("div", { class: "item-actions" }, hideControl(c), mainButton("Fill", "pm", () => openSheet(c))));
+  }
+
+  /* A project whose CE link isn't the same in the Universe and ANDON (or is blank in one). */
+  function ceCardEl(c) {
+    const link = (url) => (url ? h("a", { href: url, target: "_blank", rel: "noopener", class: "ce-link", title: url }, url) : "blank");
+    const andon = [...new Set(c.andonLinks)];
+    return h("article", { class: "card item" + (S.working.has(c.id) ? " is-working" : "") + (S.entering.has(c.id) ? " is-entering" : ""),
+                          "data-id": c.id },
+      h("div", { class: "item-head" },
+        copyable(c.code, { label: "project code", cls: "code" }),
+        h("span", { class: "badge badge-info" }, "CE"),
+        c.tag ? h("span", { class: "badge badge-tag" }, ic("pin"), c.tag) : null,
+        c.status ? h("span", { class: "item-date" }, c.status) : null),
+      h("h3", null, c.name || "(no name)"),
+      h("ul", { class: "notes" }, h("li", { class: "flow" },
+        h("span", { class: "flow-step" }, h("b", null, RULES.ceSync.universe), " ", link(c.universeLink)),
+        h("span", { class: "flow-step" }, h("b", null, `ANDON ${RULES.ceSync.andon}`), " ", ...andon.flatMap((u, i) => [i ? " / " : null, link(u)])))),
+      h("div", { class: "item-actions" }, hideControl(c), mainButton("Fill", "ce", () => openSheet(c))));
+  }
+
   /* An ANDON row whose project has a Project Approval: its Request No. goes into
      ANDON's Approval (a link to the approval, shown as the number). */
   function approvalCardEl(c) {
-    const writable = ctx.canWriteFor("approval");
     return h("article", { class: "card item" + (S.working.has(c.id) ? " is-working" : "") + (S.entering.has(c.id) ? " is-entering" : ""),
                           "data-id": c.id },
       h("div", { class: "item-head" },
@@ -322,8 +386,22 @@ export function createInbox(ctx) {
         h("span", { class: "item-date" }, c.submittedAt ? `PAR ${fmt.day(c.submittedAt)}` : "")),
       h("h3", null, c.name || "(no name)"),
       h("p", { class: "item-meta" }, "PAR ", copyable(c.requestNo, { label: "request number" }), ` · into ANDON's ${c.field}`),
-      h("div", { class: "item-actions" },
-        h("button", { type: "button", class: "btn btn-tonal", disabled: !writable, onclick: () => openSheet(c) }, "Push")));
+      h("div", { class: "item-actions" }, mainButton("Push", "approval", () => openSheet(c))));
+  }
+
+  /* A Universe row with a blank Other Attachments whose brief has files in Lark
+     Approval: the link opens them there (to download), and Upload sends them here. */
+  function filesCardEl(c) {
+    return h("article", { class: "card item" + (S.working.has(c.id) ? " is-working" : "") + (S.entering.has(c.id) ? " is-entering" : ""),
+                          "data-id": c.id },
+      h("div", { class: "item-head" },
+        copyable(c.code, { label: "project code", cls: "code" }),
+        c.status ? h("span", { class: `badge ${BADGE[c.status] || ""}` }, c.status) : null,
+        h("span", { class: "item-date" }, c.submittedAt ? `Brief ${fmt.day(c.submittedAt)}` : "")),
+      h("h3", null, c.name || "(no name)"),
+      h("p", { class: "item-meta" }, h("a", { href: c.link, target: "_blank", rel: "noopener" }, `Brief: ${c.label || "attachments"}`),
+        ` · ${c.field} is blank`),
+      h("div", { class: "item-actions" }, mainButton("Upload", "files", () => openSheet(c))));
   }
 
   /* Where a Collections card lands: the row (“AR name”), then From → To. */
@@ -337,15 +415,23 @@ export function createInbox(ctx) {
     return [name, h("span", { class: "flow-step" }, t.row.status || "No status", arrow, h("b", null, to))];
   }
 
+  /* Show a card in the Universe tab and let it glow. Briefs and PARs share that tab,
+     so the link is often to the tab already open: then draw it here (no hash change). */
+  function goTo(e, id) {
+    S.flashCard = id;
+    S.query.universe = "";
+    if (location.hash === "#/universe") { e.preventDefault(); ctx.render(); }
+  }
+
   /* A link to the card that clears a blocker, if it's in the lists. */
   function fixLink(reason, code) {
     if (reason.startsWith("Push this project's brief")) {
       const brief = S.lists.brief.cards.find(b => b.code === code);
-      return brief ? h("a", { href: "#/briefs", onclick: () => { S.flashCard = brief.id; S.query.brief = ""; } }, "Go to the brief") : null;
+      return brief ? h("a", { href: "#/universe", onclick: (e) => goTo(e, brief.id) }, "Go to the brief") : null;
     }
     if (reason.startsWith("Add this project's PAR")) {
       const par = S.lists.par.cards.find(p => p.code === code);
-      return par ? h("a", { href: "#/pars", onclick: () => { S.flashCard = par.id; S.query.par = ""; } }, "Go to the PAR") : null;
+      return par ? h("a", { href: "#/universe", onclick: (e) => goTo(e, par.id) }, "Go to the PAR") : null;
     }
     return null;
   }
@@ -445,7 +531,6 @@ export function createInbox(ctx) {
   const AUDIT_DATES = new Set(["Project Start", "Project End", "RFP Received Date", "Event Start", "Event End"]);
 
   function auditCardEl(c) {
-    const writable = ctx.canWriteFor(`audit:${c.target}`);
     return h("article", { class: "card item" + (S.working.has(c.id) ? " is-working" : "") + (S.entering.has(c.id) ? " is-entering" : ""),
                           "data-id": c.id },
       h("div", { class: "item-head" },
@@ -461,36 +546,105 @@ export function createInbox(ctx) {
         c.status ? ` · ${c.status}` : ""),
       h("ul", { class: "notes" }, h("li", { class: "flow" }, h("span", { class: "flow-row" }, "Missing"),
         h("span", { class: "flow-step" }, c.gaps.join(" · ")))),
-      h("div", { class: "item-actions" },
-        c.tag
-          ? h("button", { type: "button", class: "btn btn-ghost", disabled: !ctx.canWriteFor(`tag:${c.target}`),
-              title: `Takes “${c.tag}” off this row, so it's back in the list (for everyone)`,
-              onclick: (e) => markTag(c, c.tag, false, e.currentTarget) }, "Unmark")
-          : !RULES.tags.tables.includes(c.target)
-          // A table without custom tags (ANDON): Hide is just "on this device", as it always was.
-          ? h("button", { type: "button", class: "btn btn-ghost", title: "Hides this card on this device until another cell goes blank",
-              onclick: (e) => hideAudit(c, true, e.currentTarget) }, "Hide")
-          : h("button", { type: "button", class: "btn btn-ghost hide-btn", "aria-haspopup": "menu", "aria-expanded": "false",
-              title: "Mark it with a tag (for everyone), or hide it on this device",
-              onclick: (e) => hideMenu(c, e.currentTarget) }, "Hide", ic("caret")),
-        h("button", { type: "button", class: "btn btn-tonal", disabled: !writable, onclick: () => openSheet(c) }, "Fill")));
+      h("div", { class: "item-actions" }, hideControl(c), mainButton("Fill", `audit:${c.target}`, () => openSheet(c))));
+  }
+
+  /* The table an audit card's tag is written to: its own, or for a PM or CE card (which
+     spans the Universe and ANDON) the Universe, since ANDON has no Tags column. */
+  const tagTable = (c) => (c.kind === "audit" ? c.target : "universe");
+  const whereOf = (c) => (c.kind === "pm" ? "PM" : c.kind === "ce" ? "CE" : AUDIT_WHERE[c.target]);
+  const tagRow = (c) => (S.data[tagTable(c)] || []).find(r => r.record_id === c.rowId) || { fields: {} };
+
+  /* An audit card's Unmark (when tagged), or Hide: a menu of tags + "on this device",
+     or only "on this device" where the table has no custom tags. */
+  function hideControl(c) {
+    const t = tagTable(c);
+    if (c.tag) {
+      return h("button", { type: "button", class: "btn btn-ghost", disabled: !ctx.canWriteFor(`tag:${t}`),
+        title: `Takes “${c.tag}” off the ${AUDIT_WHERE[t]} row, so it's back in the list (for everyone)`,
+        onclick: (e) => markTag(c, c.tag, false, e.currentTarget) }, "Unmark");
+    }
+    if (!RULES.tags.tables.includes(t)) {
+      // A table without custom tags (ANDON): Hide is just "on this device", as it always was.
+      return h("button", { type: "button", class: "btn btn-ghost", title: "Hides this card on this device until another cell goes blank",
+        onclick: (e) => hideAudit(c, true, e.currentTarget) }, "Hide");
+    }
+    return h("button", { type: "button", class: "btn btn-ghost hide-btn", "aria-haspopup": "menu", "aria-expanded": "false",
+      title: c.kind === "audit" ? "Mark it with a tag (for everyone), or hide it on this device"
+        : "Mark the project's Universe row with a tag (for everyone), or hide it on this device",
+      onclick: (e) => hideMenu(c, e.currentTarget) }, "Hide", ic("caret"));
   }
 
   /* Under Hide: "Mark as …" for each custom tag (Settings > Custom tags), written to
      the row's Tags cell so the card leaves everyone's list, and "Hide on this device". */
   function hideMenu(c, btn) {
-    const canTag = ctx.canWriteFor(`tag:${c.target}`);
+    const canTag = ctx.canWriteFor(`tag:${tagTable(c)}`);
     const items = canTag ? S.customTags.map(t => ({ label: `Mark as ${t.tag}`, icon: "pin",
       onSelect: () => markTag(c, t.tag, true, btn) })) : [];
     if (!canTag && S.customTags.length) {
-      items.push({ label: "Why no “Mark as …”?", icon: "info", onSelect: () => toast(`Marking needs a “${RULES.tags.field}” column in ${AUDIT_WHERE[c.target]}.`,
-        { detail: ctx.problemsFor(`tag:${c.target}`)[0] || "Your login can only read the tables. Log in again to allow it.", timeout: 0 }) });
+      items.push({ label: "Why no “Mark as …”?", icon: "info", onSelect: () => toast(`Marking needs a “${RULES.tags.field}” column in ${AUDIT_WHERE[tagTable(c)]}.`,
+        { detail: ctx.problemsFor(`tag:${tagTable(c)}`)[0] || "Your login can only read the tables. Log in again to allow it.", timeout: 0 }) });
     }
-    if (!S.customTags.length) {
+    if (canTag) items.push({ label: "Mark as another tag…", icon: "plus", onSelect: () => otherTag(c, btn) });
+    else if (!S.customTags.length) {
       items.push({ label: "Add custom tags in Settings", icon: "gear", onSelect: () => { location.hash = "#/settings"; } });
     }
     items.push("-", { label: "Hide on this device", icon: "eye", onSelect: () => hideAudit(c, true, btn) });
     openMenu(items, { anchor: btn });
+  }
+
+  /* Hide > "Mark as another tag…": type any tag (the custom tags and the tags in use are
+     suggested). A tag that isn't a custom tag yet is added to Settings > Custom tags
+     first (for everyone), so the card moves to its group like the others. One that
+     looks like a misspelling of a tag in use asks first. */
+  async function otherTag(c, btn) {
+    const custom = S.customTags.map(t => t.tag);
+    const inUse = [];
+    for (const t of RULES.tags.tables) for (const r of S.data[t] || []) for (const x of tagsOf((r.fields || {})[RULES.tags.field])) {
+      if (!inUse.some(y => y.toLowerCase() === x.toLowerCase())) inUse.push(x);
+    }
+    inUse.sort((a, b) => a.localeCompare(b));
+    const mine = tagsOf(tagRow(c).fields[RULES.tags.field]);
+    const offer = [...custom, ...inUse.filter(t => !custom.some(x => x.toLowerCase() === t.toLowerCase()))]
+      .filter(t => !mine.some(x => x.toLowerCase() === t.toLowerCase()));
+    const input = h("input", { type: "text", list: "otherTagList", autocomplete: "off", maxlength: "60", placeholder: "e.g. On Hold",
+      "aria-label": "Tag" });
+    const hint = h("p", { class: "set-sub" });
+    const picks = h("div", { class: "ce-picks" });
+    let okLike = "";   // the lookalike warning was shown for this spelling: Mark again keeps it
+    let chosen = null;
+    const paintHint = () => {
+      const p = pickTag(input.value, custom, inUse);
+      hint.textContent = p.error || !p.tag ? "" : p.isNew
+        ? `“${p.tag}” isn't a custom tag yet: it's added to Settings > Custom tags (for everyone), then ${c.code} is marked with it.`
+        : `${c.code} moves to the “${p.tag}” group at the bottom of the list.`;
+    };
+    input.addEventListener("input", () => { picks.replaceChildren(); paintHint(); });
+    setTimeout(() => input.focus(), 0);   // (the sheet focuses Cancel; typing is the point here)
+    const ok = await confirmSheet({
+      title: `Mark ${c.code || "this project"} with a tag`, icon: "pin", confirm: "Mark", busyText: "Adding the tag…",
+      sub: "The card leaves the audit list for everyone and shows in that tag's group at the bottom.",
+      body: h("div", null, h("label", { class: "sr-only" }, "Tag"), input,
+        h("datalist", { id: "otherTagList" }, offer.map(t => h("option", { value: t }))), hint, picks),
+      run: async () => {
+        const p = pickTag(input.value, custom, inUse);
+        if (p.error) throw new Error(p.error);
+        if (p.isNew && p.like.length && okLike !== p.tag) {
+          okLike = p.tag;
+          picks.replaceChildren(...p.like.map(t => h("button", { type: "button", class: "btn btn-sm",
+            onclick: () => { input.value = t; picks.replaceChildren(); paintHint(); input.focus(); } }, `Use “${t}”`)));
+          throw new Error(`“${p.tag}” looks like ${p.like.map(t => `“${t}”`).join(" or ")}. Pick one below, or Mark again to add “${p.tag}” as a new tag.`);
+        }
+        if (p.isNew) {
+          if (!ctx.canAddCustomTag()) throw new Error(`“${p.tag}” isn't a custom tag yet, and your login can't add one (${ctx.problemsFor("variables")[0] || "it can only read the Variables table"}). Pick a custom tag, or add it in Settings first.`);
+          if (!ctx.ensureTime()) throw new Error("Your login is about to end. Log in again, then try it.");
+          try { await ctx.addCustomTag(p.tag); }
+          catch (e) { throw new Error(isDeadToken(e) ? "Your login has ended. Log in again, then try it." : `Couldn't add “${p.tag}” as a custom tag: ${describe(e)}`); }
+        }
+        chosen = p.tag;
+      },
+    });
+    if (ok && chosen) markTag(c, chosen, true, btn && btn.isConnected ? btn : null);
   }
 
   /* The tag groups at the bottom of the audit list: one per custom tag, folded until
@@ -515,9 +669,9 @@ export function createInbox(ctx) {
      Ignore: the card moves at once, the write follows, and a refusal moves it back
      with the reason. The tag is merged into what the Tags cell says in Lark then. */
   async function markTag(c, tag, add, button) {
-    const key = `tag:${c.target}:${c.rowId}`;
+    const table = tagTable(c), field = RULES.tags.field;
+    const key = `tag:${table}:${c.rowId}`;
     if (S.working.has(key)) return;
-    const table = c.target, field = RULES.tags.field;
     const rec = (S.data[table] || []).find(r => r.record_id === c.rowId);
     if (!rec || !ctx.ensureTime()) return;
     const before = rec.fields[field];
@@ -566,8 +720,9 @@ export function createInbox(ctx) {
     store("local", "polaris.auditHidden", [...S.auditHide]);
     ctx.recompute();
     ctx.render();
-    if (value) toast(`Hid ${c.code} (${AUDIT_WHERE[c.target]}).`, { action: "Undo", onAction: () => hideAudit(c, false),
-      detail: "Only on this device. It comes back if another cell goes blank." });
+    if (value) toast(`Hid ${c.code} (${whereOf(c)}).`, { action: "Undo", onAction: () => hideAudit(c, false),
+      detail: c.kind === "audit" ? "Only on this device. It comes back if another cell goes blank."
+        : `Only on this device. It comes back if either ${c.kind === "pm" ? "PM" : "CE link"} changes.` });
   }
 
   /* The fill sheet: every blank with an editor, pre-filled from the brief (which
@@ -853,6 +1008,7 @@ export function createInbox(ctx) {
       const bad = ch.bad.filter(k => k in ch.edits);
       const tooBig = ch.files.map(f => uploadSizeProblem(f, LARK.maxUploadMb)).filter(Boolean);
       s.blocked = !ctx.canWriteFor(`edit:${c.table}`) ? `Pushing to ${EDIT_WHERE[c.table]} is off: ${ctx.problemsFor(`edit:${c.table}`)[0] || "your login can only read the tables."}`
+        : s.checking ? "Checking the row against Lark…"
         : bad.length ? `Check ${bad.join(", ")}: ${bad.length === 1 ? "it isn't" : "they aren't"} valid yet.`
         : tooBig.length ? tooBig[0]
         : n ? "" : "Nothing changed yet.";
@@ -877,21 +1033,40 @@ export function createInbox(ctx) {
     };
     s.refresh = refresh;
 
-    // The whole row, fresh from Lark (every column, not only the ones the table shows).
+    const draw = () => {
+      // A redraw keeps the edits (they're in ch), and the field being typed in.
+      const focused = docBox.contains(document.activeElement) ? document.activeElement.id : "";
+      const top = docBox.scrollTop;
+      doc = rowDoc.renderEdit(docBox, { table: c.table, loaded: ch.loaded, choices: ch, names: ch.names, name: c.name,
+                                         peoplePicker, onChange: refresh });
+      docBox.scrollTop = top;
+      if (focused && document.getElementById(focused)) document.getElementById(focused).focus();
+      refresh();
+    };
+
+    // The whole row, fresh from Lark (every column, not only the ones the table shows). A table
+    // read with every column (ANDON) already has it as listed: that shows at once, and the fresh
+    // read only redraws it if Lark has something newer. Push waits for the fresh read either way.
     const load = async () => {
       s.blocked = "Reading the row…";
+      s.checking = true;
       go.disabled = true;
       $("#sheetError").hidden = true;
-      docBox.replaceChildren(h("div", { class: "loader" }, h("div", { class: "loader-title" }, h("span", { class: "spinner" }), "Reading the row from Lark…")));
+      const listed = Array.isArray((S.columns || {})[c.table]) ? null
+        : (S.data && (S.data[c.table] || []).find(r => r.record_id === c.rowId)) || null;
+      if (listed) { ch.loaded = listed.fields || {}; draw(); }
+      else docBox.replaceChildren(h("div", { class: "loader" }, h("div", { class: "loader-title" }, h("span", { class: "spinner" }), "Reading the row from Lark…")));
       try {
         const rec = await findRecord(ctx.call, ctx.tables[c.table], c.rowId);
         if (sheet !== s) return;   // closed meanwhile
         if (!rec) throw Object.assign(new Error("gone"), { userMessage: "That row isn't in Lark any more. Refresh to see what Lark has now." });
-        ch.loaded = rec.fields || {};
-        doc = rowDoc.renderEdit(docBox, { table: c.table, loaded: ch.loaded, choices: ch, names: ch.names, name: c.name,
-                                           peoplePicker, onChange: refresh });
-        refresh();
+        s.checking = false;
+        const fresh = rec.fields || {};
+        const same = listed && JSON.stringify(fresh) === JSON.stringify(ch.loaded);
+        ch.loaded = fresh;
+        if (same) refresh(); else draw();
       } catch (err) {
+        s.checking = false;
         if (sheet !== s || isDeadToken(err)) return;
         docBox.replaceChildren(h("div", { class: "callout callout-err" }, ic("alert"), h("div", null, describe(err)),
           h("button", { type: "button", class: "btn btn-sm", onclick: load }, "Try again")));
@@ -903,10 +1078,14 @@ export function createInbox(ctx) {
   function defaults(c) {
     if (c.kind === "brief") return { vat: defaultVat(c.currency), client: "", bd: [], otherLinks: "", showLinks: false };
     if (c.kind === "invoice") {
-      return { targetId: c.target, arName: c.name, invoiceNo: "", siNo: "", invoiceDate: null, invoiceDateOk: true, files: [], showDetails: false };
+      return { targetId: c.target, arName: c.name, invoiceNo: "", siNo: "", invoiceDate: null, invoiceDateOk: true,
+               collectionDate: null, collectionDateOk: true, files: [], showDetails: false };
     }
     if (c.kind === "andon") return { pm: [], tribe: "" };
+    if (c.kind === "pm") return { pm: c.suggestion.map(u => ({ id: u.id, name: u.name || u.id, email: "" })) };
+    if (c.kind === "ce") return { link: c.suggestion || "" };
     if (c.kind === "edit") return { edits: {}, files: [], bad: [], loaded: null };
+    if (c.kind === "files") return { files: [] };
     if (c.kind === "audit") return { fields: [...c.gaps], vat: defaultVat(c.brief ? c.brief.currency : "PHP"), values: null, edited: [], bad: [], files: [] };
     return {};
   }
@@ -928,11 +1107,14 @@ export function createInbox(ctx) {
     $("#sheetTitle").textContent = { brief: "Push to Universe", par: "Add PAR to Universe", invoice: "Add to Collections", andon: "Add to ANDON",
                                      audit: `Fill blanks in ${c.target === "andon" ? "ANDON" : "the Universe"}`,
                                      edit: `Changes to this ${EDIT_WHERE[c.table]} row`, view: TABLE_TITLES[c.table],
-                                     approval: "Add approval to ANDON" }[c.kind];
+                                     approval: "Add approval to ANDON", pm: "Set the PM in the Universe and ANDON",
+                                     ce: "Set the CE link in the Universe and ANDON",
+                                     files: `Upload the brief's files to ${c.field}` }[c.kind];
     $("#sheetSub").replaceChildren(copyable(c.code, { label: "project code", empty: "No code" }),
       ...((c.kind === "par" || c.kind === "invoice" || c.kind === "view" || c.kind === "approval") && c.requestNo ? [" · request ", copyable(c.requestNo, { label: "request number" })] : []), ` · ${c.name}`);
     go.querySelector(".label").textContent = { brief: "Push to Universe", par: "Add PAR", invoice: "Add to Collections", andon: "Add to ANDON", audit: "Fill",
-                                               edit: "Push changes", approval: "Add approval" }[c.kind];
+                                               edit: "Push changes", approval: "Add approval", pm: "Set PM", ce: "Set CE link",
+                                               files: "Upload" }[c.kind];
     $("#sheetError").hidden = true;
     const body = $("#sheetBody");
     body.replaceChildren();
@@ -946,6 +1128,9 @@ export function createInbox(ctx) {
     else if (c.kind === "andon") buildAndon(body, c);
     else if (c.kind === "audit") buildAudit(body, c);
     else if (c.kind === "approval") buildApproval(body, c);
+    else if (c.kind === "pm") buildPm(body, c);
+    else if (c.kind === "ce") buildCe(body, c);
+    else if (c.kind === "files") buildFiles(body, c);
     else buildInvoice(body, c);
     placeDoc();
     if (c.kind !== "view") paintDoc();
@@ -1034,11 +1219,90 @@ export function createInbox(ctx) {
   }
 
   /* --- PAR --- */
+  /* --- PM: one person for the Universe's PM and ANDON's PM (LEAD). Fill stays off while it's blank. --- */
+  function buildPm(body, c) {
+    const ch = sheet.choices;
+    const refresh = () => {
+      sheet.blocked = (ch.pm || []).length ? "" : "PM";
+      go.disabled = sheet.busy || !!sheet.blocked;
+      paintDoc();
+    };
+    sheet.refresh = refresh;
+    const pool = [...new Map([...(S.pmPool || []), ...S.pool, ...c.universePm, ...c.andonPm.flat()].map(p => [p.id, p])).values()];
+    put(body, fieldEl("PM", false, peoplePicker({ id: "sheetPmSync", selected: ch.pm || [], pool, placeholder: "Pick the PM",
+      single: true, head: "Frequent PMs", onChange: (list) => { ch.pm = list; refresh(); } }), "sheetPmSync"));
+    refresh();
+  }
+
+  /* --- CE: one link for the Universe's Internal CE (Sheet) and ANDON's Working CE. Off while it isn't a link. --- */
+  function buildCe(body, c) {
+    const ch = sheet.choices;
+    const input = h("input", { type: "url", id: "sheetCe", autocomplete: "off", placeholder: "https://docs.google.com/spreadsheets/…" });
+    input.value = ch.link || "";
+    const note = h("p", { class: "note", role: "status", hidden: true });
+    const refresh = () => {
+      const ok = validLink(ch.link);
+      sheet.blocked = ok ? "" : "CE link";
+      note.hidden = ok || !String(ch.link || "").trim();
+      note.textContent = "Paste the whole link, starting with https://.";
+      go.disabled = sheet.busy || !!sheet.blocked;
+      paintDoc();
+    };
+    sheet.refresh = refresh;
+    input.addEventListener("input", () => { ch.link = input.value.trim(); refresh(); });
+    // Two different links: one click picks either.
+    const choices = [...new Set([...c.andonLinks, c.universeLink].filter(Boolean))];
+    const pick = choices.length > 1 ? h("div", { class: "ce-picks" }, choices.map(u => h("button", { type: "button", class: "btn btn-sm",
+      title: u, onclick: () => { ch.link = u; input.value = u; refresh(); } },
+      c.andonLinks.includes(u) ? (u === c.universeLink ? "Use this one" : "Use ANDON's") : "Use the Universe's"))) : null;
+    put(body,
+      h("p", { class: "set-sub" }, c.universeLink || c.andonLinks.some(Boolean)
+        ? "The link goes into both tables. Check it's the right sheet." : "Neither table has the CE yet. Paste the link to its sheet."),
+      fieldEl("CE link", false, input, "sheetCe"), pick, note);
+    refresh();
+  }
+
   /* --- PAR → ANDON Approval: nothing to choose; the row beside it shows the change. --- */
   function buildApproval(body, c) {
     sheet.refresh = paintDoc;
     put(body, c.link && c.link.link ? h("a", { class: "btn btn-sm view-open", href: c.link.link, target: "_blank", rel: "noopener" },
       `Open ${c.requestNo || "the approval"} in Lark`, ic("external")) : null);
+  }
+
+  /* --- the brief's files → the Universe: open them in Lark Approval, download, add here. --- */
+  function buildFiles(body, c) {
+    const ch = sheet.choices;
+    const list = h("ul", { class: "files" });
+    const btnText = h("span");
+    const blockNote = h("p", { class: "note", role: "status", hidden: true });
+    const refresh = () => {
+      list.replaceChildren(...ch.files.map((f, i) => h("li", null, ic("link"),
+        h("span", { class: "file-name" }, f.name, " ", h("span", { class: "file-size" }, `(${Math.max(1, Math.round(f.size / 1024)).toLocaleString()} KB)`)),
+        h("button", { type: "button", "aria-label": `Remove ${f.name}`, onclick: () => { ch.files.splice(i, 1); refresh(); } }, ic("x")))));
+      list.hidden = !ch.files.length;
+      btnText.textContent = ch.files.length ? "Add another file" : "Add the files";
+      const tooBig = ch.files.map(f => uploadSizeProblem(f, LARK.maxUploadMb)).filter(Boolean);
+      sheet.blocked = tooBig.join(" ") || (ch.files.length ? "" : "files");
+      blockNote.hidden = !tooBig.length;
+      blockNote.textContent = tooBig.join(" ");
+      go.disabled = sheet.busy || !!sheet.blocked;
+      paintDoc();
+    };
+    sheet.refresh = refresh;
+    const input = h("input", { type: "file", multiple: true, hidden: true });
+    input.addEventListener("change", () => {
+      for (const file of input.files) ch.files.push({ name: file.name, size: file.size, file });
+      input.value = "";
+      refresh();
+    });
+    put(body,
+      h("a", { class: "btn btn-sm view-open", href: c.link, target: "_blank", rel: "noopener" },
+        `Open the brief's ${c.label || "attachments"} in Lark`, ic("external")),
+      h("div", { class: "field" }, h("span", { class: "field-label" }, c.field), list,
+        h("label", { class: "btn btn-sm file-btn" }, ic("plus"), btnText, input),
+        h("p", { class: "set-sub" }, `Up to ${LARK.maxUploadMb} MB each. Uploaded to Lark when the push runs.`)),
+      blockNote);
+    refresh();
   }
 
   function buildPar(body, c) {
@@ -1072,6 +1336,12 @@ export function createInbox(ctx) {
     const arField = h("div", { class: "field" });
     const blockNote = h("p", { class: "note", role: "status" });
     const details = h("div", { class: "field" });
+    // An approved request (its row goes to For Collection) needs the Collection Date.
+    const needsDate = () => c.step === "approved" && !ch.invalid;
+    const collField = h("div", { class: "field" });
+    collField.append(h("label", { class: "field-label", for: "sheetCollDate" }, "Collection Date"),
+      dateField({ id: "sheetCollDate", value: ch.collectionDate || null,
+                  onChange: (ms, ok) => { ch.collectionDate = ms; ch.collectionDateOk = ok; refresh(); } }));
     const refresh = () => {
       const change = collectionsChange(c, ch, opts, RULES);
       const [title, label] = verbs(c, change.action, ch.invalid);
@@ -1079,10 +1349,14 @@ export function createInbox(ctx) {
       if (!sheet.busy) go.querySelector(".label").textContent = label;
       arField.hidden = change.mode !== "create";
       details.hidden = c.step !== "approved";
-      sheet.blocked = (change.mode === "create" && !ch.invalid ? c.noNew : "")
-        || (ch.invoiceDateOk === false ? "Invoice Date isn't a date Polaris can read. Try Oct 14, 2026, or double-click it to pick one." : "");
-      blockNote.hidden = !sheet.blocked;
-      blockNote.textContent = sheet.blocked;
+      collField.hidden = !needsDate();
+      const said = (change.mode === "create" && !ch.invalid ? c.noNew : "")
+        || (ch.invoiceDateOk === false ? "Invoice Date isn't a date Polaris can read. Try Oct 14, 2026, or double-click it to pick one." : "")
+        || (needsDate() && ch.collectionDateOk === false ? "Collection Date isn't a date Polaris can read. Try Oct 14, 2026, or double-click it to pick one." : "");
+      // A blank Collection Date just keeps the button off (the empty field says what's missing).
+      sheet.blocked = said || (needsDate() && !ch.collectionDate ? "Collection Date" : "");
+      blockNote.hidden = !said;
+      blockNote.textContent = said;
       go.disabled = sheet.busy || !!sheet.blocked;
       paintDoc();
     };
@@ -1134,7 +1408,7 @@ export function createInbox(ctx) {
         fieldEl("Invoice Date", true, date, "sheetInvDate"),
         h("div", { class: "field" }, h("span", { class: "field-label" }, "Invoice", h("em", null, " (optional)")), list,
           h("label", { class: "btn btn-sm file-btn" }, ic("plus"), "Add a file", input),
-          h("p", { class: "set-sub" }, "PDF or image, up to 10 MB.")));
+          h("p", { class: "set-sub" }, `PDF or image, up to ${LARK.maxUploadMb} MB.`)));
       details.style.gap = "12px";
     };
     if (ch.showDetails || ch.invoiceNo || ch.files.length) showDetails();
@@ -1143,7 +1417,7 @@ export function createInbox(ctx) {
 
     put(body, picker, arField, blockNote,
                 c.notes.length ? h("p", { class: "note" }, copyableText(`Note: ${c.notes.join(" ")}`)) : null,
-                details);
+                collField, details);
     refresh();
   }
 
@@ -1155,6 +1429,7 @@ export function createInbox(ctx) {
     if (ch.invoiceNo.trim()) out["Invoice Number"] = ch.invoiceNo.trim();
     if (ch.siNo.trim()) out["SI Number"] = ch.siNo.trim();
     if (ch.invoiceDate) out["Invoice Date"] = ch.invoiceDate;   // already midnight Manila
+    if (ch.collectionDate) out["Collection Date"] = ch.collectionDate;
     await uploadFiles(ch.files, ctx.tables.collections, onStatus);
     if (ch.files.length) out["Invoice"] = ch.files.map(f => ({ file_token: f.file_token }));
     onStatus("Pushing…");
@@ -1214,6 +1489,22 @@ export function createInbox(ctx) {
     if (c.kind === "approval") {
       return { ...base, verb: `Add PAR ${c.requestNo} to ANDON`, table: "andon", rowId: c.rowId, fields: { [c.field]: c.link } };
     }
+    if (c.kind === "files") {   // the files picked, by name (the write itself uses the uploaded tokens)
+      const n = (ch.files || []).length;
+      return { ...base, verb: `Upload ${n} file${n === 1 ? "" : "s"} to ${c.field}`, table: "universe", rowId: c.rowId,
+               fields: { [c.field]: (ch.files || []).map(f => ({ name: f.name })) } };
+    }
+    if (c.kind === "ce") {   // the Universe row beside the sheet (ANDON gets the same)
+      const link = validLink(ch.link);
+      return { ...base, verb: "Set the CE link in the Universe and ANDON", table: "universe", rowId: c.rowId,
+               fields: link ? ceWrites(link, RULES).universe : {} };
+    }
+    if (c.kind === "pm") {   // the Universe row beside the sheet (ANDON gets the same)
+      const p = (ch.pm || [])[0];
+      if (p) names[p.id] = p.name;
+      return { ...base, verb: "Set the PM in the Universe and ANDON", table: "universe", rowId: c.rowId,
+               fields: p ? pmWrites(p, RULES).universe : {} };
+    }
     if (c.kind === "edit") {
       const fields = editChanges(ctx.fieldsOf(c.table), ch.loaded || {}, ch);
       const n = Object.keys(fields).length;
@@ -1242,6 +1533,7 @@ export function createInbox(ctx) {
       if (ch.invoiceNo && ch.invoiceNo.trim()) fields["Invoice Number"] = ch.invoiceNo.trim();
       if (ch.siNo && ch.siNo.trim()) fields["SI Number"] = ch.siNo.trim();
       if (ch.invoiceDate) fields["Invoice Date"] = ch.invoiceDate;
+      if (ch.collectionDate) fields["Collection Date"] = ch.collectionDate;
       if (ch.files && ch.files.length) fields["Invoice"] = ch.files.map(f => ({ name: f.name }));
     }
     return { ...base, verb: verbs(c, change.action, job.invalid)[0], table: "collections",
@@ -1253,6 +1545,42 @@ export function createInbox(ctx) {
   async function perform(c, job, { onStatus = () => {} } = {}) {
     let res, payload, extra = {};
     const ch = job.choices;
+    if (c.kind === "pm") {
+      // Refused here too: one PM, never blank. Both tables are re-read before either is written.
+      const p = (ch.pm || [])[0];
+      if (!p) throw Object.assign(new Error("required"), { userMessage: "Pick the PM first." });
+      const writes = pmWrites(p, RULES);
+      const rows = [{ table: "universe", rowId: c.rowId, loaded: c.loaded.universe },
+                    ...c.andonRows.map(id => ({ table: "andon", rowId: id, loaded: c.loaded.andon[id] }))];
+      payload = writes.universe;
+      res = await syncPm(ctx.call, ctx.tables, rows, writes, (t) => ctx.fieldsOf(t));
+      return { res, payload, extra: { pmName: p.name } };
+    }
+    if (c.kind === "ce") {
+      // Refused here too: an https link. Both tables are re-read before either is written.
+      const link = validLink(ch.link);
+      if (!link) throw Object.assign(new Error("required"), { userMessage: "Paste the CE link first (starting with https://)." });
+      const writes = ceWrites(link, RULES);
+      const rows = [{ table: "universe", rowId: c.rowId, loaded: c.loaded.universe },
+                    ...c.andonRows.map(id => ({ table: "andon", rowId: id, loaded: c.loaded.andon[id] }))];
+      payload = writes.universe;
+      res = await syncPm(ctx.call, ctx.tables, rows, writes, (t) => ctx.fieldsOf(t), "Both already have that CE link.");
+      return { res, payload, extra };
+    }
+    if (c.kind === "files") {
+      // Refused here too: at least one file, none too big. They upload first (a failed
+      // upload writes nothing; a retry reuses the tokens), then go into the cell only
+      // while it's still blank (someone who filled it meanwhile: AlreadyDone).
+      const files = ch.files || [];
+      if (!files.length) throw Object.assign(new Error("no file"), { userMessage: "Add the files first." });
+      const tooBig = files.map(f => uploadSizeProblem(f, LARK.maxUploadMb)).filter(Boolean);
+      if (tooBig.length) throw Object.assign(new Error("too big"), { userMessage: tooBig.join(" ") });
+      await uploadFiles(files, ctx.tables.universe, onStatus);
+      onStatus("Pushing…");
+      payload = { [c.field]: files.map(f => ({ file_token: f.file_token })) };
+      res = await fillGaps(ctx.call, ctx.tables.universe, c.rowId, payload);
+      return { res, payload, extra: { cell: files.map(f => ({ file_token: f.file_token, name: f.name, size: f.size })) } };
+    }
     if (c.kind === "approval") {
       // Only into a blank Approval: one someone filled meanwhile is left alone (AlreadyDone).
       payload = { [c.field]: c.link };
@@ -1302,6 +1630,10 @@ export function createInbox(ctx) {
       res = await fillGaps(ctx.call, ctx.tables[c.target], c.rowId, payload, "Status" in payload ? { Status: c.status } : {});
     } else {
       const change = collectionsChange(c, { ...ch, invalid: job.invalid }, ctx.collectionOptions(), RULES);
+      // Refused here too, not only in the sheet: an approved request needs its Collection Date.
+      if (c.step === "approved" && !job.invalid && !ch.collectionDate) {
+        throw Object.assign(new Error("required"), { userMessage: "An approved invoice needs its Collection Date." });
+      }
       if (c.step === "approved") Object.assign(change.fields, await invoiceDetails(ch, onStatus));
       payload = change.fields;
       const t = c.targets.find(x => x.id === change.rowId);
@@ -1320,6 +1652,34 @@ export function createInbox(ctx) {
 
   /* ======================= small inputs ======================= */
 
+  /* A suggestion list floats over the page under its field (above it when there's
+     no room below), so the form's scrolling body and rounded card don't clip it.
+     It follows the field while anything scrolls or the window resizes. */
+  function floatList(list, anchor) {
+    let on = false;
+    const place = () => {
+      if (list.hidden) return;
+      const r = anchor.getBoundingClientRect();
+      const below = innerHeight - r.bottom - 12, above = r.top - 12;
+      const up = below < 200 && above > below;
+      Object.assign(list.style, { position: "fixed", right: "auto", left: `${r.left}px`, width: `${r.width}px`,
+        maxHeight: `${Math.max(120, Math.min(248, (up ? above : below) - 6))}px`,
+        top: up ? "auto" : `${r.bottom + 6}px`, bottom: up ? `${innerHeight - r.top + 6}px` : "auto" });
+      // Inside a transformed parent (the dialog while it animates in) "fixed" is
+      // measured from that parent: move it by however far off it landed.
+      const got = list.getBoundingClientRect();
+      const dx = got.left - r.left, dy = up ? got.bottom - (r.top - 6) : got.top - (r.bottom + 6);
+      if (dx || dy) {
+        list.style.left = `${r.left - dx}px`;
+        if (up) list.style.bottom = `${innerHeight - r.top + 6 + dy}px`; else list.style.top = `${r.bottom + 6 - dy}px`;
+      }
+    };
+    return {
+      open() { place(); if (!on) { on = true; addEventListener("scroll", place, true); addEventListener("resize", place); } },
+      close() { if (on) { on = false; removeEventListener("scroll", place, true); removeEventListener("resize", place); } },
+    };
+  }
+
   /* A text input with suggestions (free text allowed). */
   function suggestInput({ id, value, placeholder, options, onChange }) {
     const input = h("input", { type: "text", id, autocomplete: "off", placeholder, role: "combobox",
@@ -1327,8 +1687,9 @@ export function createInbox(ctx) {
     input.value = value || "";
     const list = h("ul", { class: "suggest", role: "listbox", hidden: true });
     const wrap = h("div", { class: "picker" }, input, list);
+    const float = floatList(list, input);
     let items = [], active = -1;
-    const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); active = -1; };
+    const close = () => { list.hidden = true; float.close(); input.setAttribute("aria-expanded", "false"); active = -1; };
     const pick = (v) => { input.value = v; onChange(v); close(); };
     const show = () => {
       const q = input.value.trim().toLowerCase();
@@ -1337,6 +1698,7 @@ export function createInbox(ctx) {
       list.replaceChildren(...items.map((o, i) => h("li", { role: "option", "aria-selected": "false",
         onmousedown: (e) => { e.preventDefault(); pick(o); } }, o)));
       list.hidden = !items.length;
+      if (items.length) float.open(); else float.close();
       input.setAttribute("aria-expanded", String(!!items.length));
     };
     input.addEventListener("input", () => { onChange(input.value); show(); });
@@ -1352,20 +1714,23 @@ export function createInbox(ctx) {
     const input = h("input", { type: "text", id, autocomplete: "off", placeholder, role: "combobox",
                                "aria-autocomplete": "list", "aria-expanded": "false" });
     const chips = h("span", { class: "picker-chips" });
-    const box = h("div", { class: "picker-box", onclick: () => input.focus() }, chips, input);
+    // The list opens on a click or typing, not on focus: the sheet focuses its first field as it opens.
+    const box = h("div", { class: "picker-box", onclick: () => { input.focus(); show(); } }, chips, input);
     const list = h("ul", { class: "suggest", role: "listbox", hidden: true });
     const wrap = h("div", { class: "picker" }, box, list);
+    const float = floatList(list, box);
     let items = [], active = -1;
 
     const paintChips = () => chips.replaceChildren(...chosen.map((p, i) => h("span", { class: "chip" }, p.name,
       h("button", { type: "button", "aria-label": `Remove ${p.name}`, onclick: (e) => {
         e.stopPropagation(); chosen.splice(i, 1); paintChips(); onChange([...chosen]); input.focus();
       } }, ic("x")))));
-    const close = () => { list.hidden = true; input.setAttribute("aria-expanded", "false"); active = -1; };
+    const close = () => { list.hidden = true; float.close(); input.setAttribute("aria-expanded", "false"); active = -1; };
     const add = (p) => {
       if (single) chosen.length = 0;
       if (!chosen.some(x => x.id === p.id)) chosen.push({ id: p.id, name: p.name, email: p.email });
-      input.value = ""; paintChips(); onChange([...chosen]); show();
+      // Picked: the list closes (it would cover the button below) until the box is clicked again.
+      input.value = ""; paintChips(); onChange([...chosen]); close();
     };
     const show = () => {
       const q = input.value.trim().toLowerCase();
@@ -1380,13 +1745,14 @@ export function createInbox(ctx) {
         q && !items.length ? h("li", { class: "suggest-head", role: "presentation" }, "No one by that name") : null,
       ].filter(Boolean));
       list.hidden = !list.children.length;
+      if (list.hidden) float.close(); else float.open();
       input.setAttribute("aria-expanded", String(!list.hidden));
     };
-    input.addEventListener("focus", show);
     input.addEventListener("input", show);
     input.addEventListener("blur", close);
     input.addEventListener("keydown", (e) => {
       if (e.key === "Backspace" && !input.value && chosen.length) { chosen.pop(); paintChips(); onChange([...chosen]); return; }
+      if (e.key === "ArrowDown" && list.hidden) { e.preventDefault(); show(); return; }
       keyNav(e, list, () => items.length, (i) => { active = i; return active; }, () => active,
         () => { if (active >= 0) add(items[active]); else if (items.length === 1) add(items[0]); }, close);
     });

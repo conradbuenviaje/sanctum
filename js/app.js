@@ -9,7 +9,7 @@ import { parseBaseLink, loadEverything, selectOptions, TABLE_TITLES, computedTyp
 import {
   indexUniverse, indexCollections, briefCards, parCards, collectionCards, stepStatus, peoplePool, pmPool, auditCards, briefsByCode,
   draftsToJSON, draftsFromJSON, variableColumns, customTagsFrom, tagGroups, tagsOf, filterIndex, cardFacets, passesFilters,
-  approvalCards, attachmentRequest, attachmentLinkRequest, attachmentLink,
+  approvalCards, pmCards, ceCards, fileCards, attachmentRequest, attachmentLinkRequest, attachmentLink,
 } from "./sync.js";
 import { $, $$, h, ic, fillIcons, toast, fmt, store, recall, sleep, initTheme, openMenu, confirmSheet, busy } from "./ui.js";
 import { lark, wake, conn, onConn, describe, isDeadToken, LarkError, proxyHost, proxyHosts, unreachable, downloadFromBase } from "./net.js";
@@ -25,6 +25,8 @@ import { configFrom, accountabilityItems, dismissalsFrom, isAdmin, isEditor } fr
 import { createBoard } from "./board.js";
 import { createAdmin } from "./admin.js";
 import { createMancom } from "./mancomview.js";
+import { createTagging } from "./tagging.js";
+import { createFiles } from "./files.js";
 
 const tables = Object.fromEntries(Object.entries(TABLE_LINKS).map(([k, link]) => [k, parseBaseLink(link)]));
 const KEY = { theme: "polaris.theme", tab: "polaris.tab", draft: "polaris.draft" };
@@ -54,7 +56,8 @@ function loadDrafts() {
 /* ======================= state ======================= */
 const S = {
   view: "login",            // login | busy | work | settings
-  tab: ["brief", "par", "invoice", "andon", "audit"].includes(recall("local", KEY.tab)) ? recall("local", KEY.tab) : "brief",
+  // (Briefs and PARs were tabs of their own until 1.9.0: either opens the Universe tab now.)
+  tab: ["universe", "invoice", "andon", "audit"].includes(recall("local", KEY.tab)) ? recall("local", KEY.tab) : "universe",
   show: "inbox",            // on narrow screens: inbox | universe
   data: null,               // { universe, collections, brief, par, invoice }: records as read
   fields: null,
@@ -70,7 +73,7 @@ const S = {
   entering: new Set(),      // cards that just came back (Undo): animate once
   flashCard: null,          // a card to highlight where it lands
   drafts: loadDrafts(),     // what was typed in a push sheet, kept if it's cancelled (and across a reload)
-  query: { brief: "", par: "", invoice: "", andon: "", audit: "" },
+  query: { universe: "", brief: "", par: "", invoice: "", andon: "", audit: "" },
   // Inbox filters, shared by every tab until the page reloads: null = any (js/inbox.js).
   filters: { client: null, status: null, bd: null, am: null, tribe: null },
   filtersOpen: false,
@@ -79,14 +82,13 @@ const S = {
 
 /* Every Lark call runs as the signed-in user. Reads retry while the proxy wakes;
    writes never do. While a write or upload is running (track), its calls may use
-   the token through Lark's last 30 s of grace, so the clock can't cut it off. */
-let inflight = 0;
+   the token through Lark's last 30 s of grace, so neither the clock nor another tab
+   logging out can cut it off. */
 async function track(work) {
-  inflight++;
-  try { return await work(); } finally { if (--inflight === 0) tickSession(); }
+  try { return await auth.track(work); } finally { if (!auth.busyWorking()) tickSession(); }
 }
 function call(method, url, body) {
-  const t = inflight ? auth.workToken() : auth.currentToken();
+  const t = auth.busyWorking() ? auth.workToken() : auth.currentToken();
   if (!t) {
     auth.end();
     return Promise.reject(new LarkError("login ended", { deadToken: true, json: { code: 99991677 } }));
@@ -101,7 +103,11 @@ const field = (table, name) => ((S.fields && S.fields[table]) || []).find(f => f
 const TABLES_FOR = {
   brief: ["brief", "universe"], par: ["par", "brief", "universe"],
   invoice: ["invoice", "collections", "universe"], andon: ["brief", "andon"],
+  universe: ["brief", "par", "universe"],   // the Universe tab: briefs and PARs
   approval: ["par", "andon"],   // a PAR's Request No. into ANDON's Approval
+  pm: ["universe", "andon"],    // one PM in both
+  ce: ["universe", "andon"],    // one CE link in both
+  files: ["brief", "universe"], // the brief's files, uploaded by hand, into the Universe's Other Attachments
   // The audit fills Universe or ANDON cells from the brief: each card checks its own table.
   audit: ["brief", "universe"], "audit:universe": ["brief", "universe"], "audit:andon": ["brief", "andon"],
   // The row editor writes to the one table the row is in.
@@ -185,6 +191,8 @@ const universe = createUniverse(ctx);
 const collections = createCollections(ctx);
 const andon = createAndon(ctx);
 const sources = createSources(ctx);
+const tagging = createTagging(ctx);   // the Tagging page: every Universe project's tags
+const files = createFiles(ctx);       // the Files page: the tables' files, as one zip
 const queue = ctx.queue = createQueue(ctx, inbox);   // Push hands its write to the queue
 // The board's fields open the row editor; for people who may only look, the row read-only.
 ctx.openRow = (table, id) => (isViewer() ? inbox.viewRecord(table, id) : inbox.openRecord(table, id));
@@ -213,9 +221,12 @@ const sidePick = {};   // tab → table
 const sideOf = (tab) => sidePick[tab] || sideDefault(tab);
 // Which pane shows a table: a source table shares the one "source" pane.
 const paneOf = (side) => (SOURCE_KINDS.includes(side) ? "source" : side);
+// Each pane has its own search box; switching tables carries what's typed across.
+const PANE_SEARCH = { universe: "#uniSearch", collections: "#colSearch", andon: "#andonSearch", source: "#srcSearch" };
 for (const btn of $$(".pane-switch")) {
   btn.addEventListener("click", () => {
     const now = sideOf(S.tab), mine = sideDefault(S.tab);
+    const typed = $(PANE_SEARCH[paneOf(now)]).value;
     const items = SIDES.filter(s => s === "-" || tables[s[0]]).map(s => (s === "-" ? s : {
       label: s[0] === mine && s[0] !== now ? `${s[1]} (this tab's)` : s[1],
       icon: s[0] === now ? "check" : s[2],
@@ -223,6 +234,8 @@ for (const btn of $$(".pane-switch")) {
         if (s[0] === now) return;
         if (s[0] === mine) delete sidePick[S.tab]; else sidePick[S.tab] = s[0];
         render();
+        const box = $(PANE_SEARCH[paneOf(s[0])]);
+        if (box.value !== typed) { box.value = typed; box.dispatchEvent(new Event("input")); }
         const next = $(`.pane-universe[data-pane="${paneOf(s[0])}"] .pane-switch`);
         if (next) next.focus();   // the keyboard stays on the switcher, now in the new pane
       },
@@ -232,7 +245,10 @@ for (const btn of $$(".pane-switch")) {
 }
 
 /* ======================= routes ======================= */
-const ROUTES = { "": "accountability", accountability: "accountability", admin: "admin", mancom: "mancom", briefs: "brief", pars: "par", invoices: "invoice", andon: "andon", audit: "audit", universe: "brief", collections: "invoice", settings: "settings", queue: "queue" };
+// #/briefs and #/pars (Polaris's tabs before 1.9.0) open the Universe tab, so old links still work.
+const ROUTES = { "": "accountability", accountability: "accountability", admin: "admin", mancom: "mancom",
+                 universe: "universe", briefs: "universe", pars: "universe", invoices: "invoice", andon: "andon",
+                 audit: "audit", tagging: "tagging", files: "files", collections: "invoice", settings: "settings", queue: "queue" };
 const parseRoute = () => ROUTES[(location.hash.match(/^#\/?([a-z]*)/) || [])[1] || ""] || "accountability";
 
 function onRoute() {
@@ -242,7 +258,7 @@ function onRoute() {
     S.view = "login";
     S.returnTo = location.hash || "#/accountability";
   } else {
-    if (r === "queue" || r === "accountability" || r === "admin" || r === "mancom") {
+    if (r === "queue" || r === "accountability" || r === "admin" || r === "mancom" || r === "tagging" || r === "files") {
       S.view = r;
       render();
       if (!S.data && !S.loading && !S.loadError) loadData();
@@ -254,7 +270,7 @@ function onRoute() {
     S.tab = r;
     store("local", KEY.tab, r);
   }
-  $("#workLink").href = S.lastWork || "#/briefs";
+  $("#workLink").href = S.lastWork || "#/universe";
   render();
   // Load as soon as there's a login, whatever page this is, so the lists are ready.
   if (auth.currentToken() && !S.data && !S.loading && !S.loadError) loadData();
@@ -262,9 +278,9 @@ function onRoute() {
 }
 
 /* ======================= rendering ======================= */
-const TAB_TITLES = { brief: "Briefs", par: "PARs", invoice: "Invoices", andon: "ANDON", audit: "Audit" };
+const TAB_TITLES = { universe: "Universe", invoice: "Invoices", andon: "ANDON", audit: "Audit" };
 function pageTitle() {
-  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Open Items", admin: "Admin", mancom: "Mancom" }[S.view] || TAB_TITLES[S.tab];
+  const name = { login: "Log in", busy: "Logging in", settings: "Settings", queue: "Queue", accountability: "Open Items", admin: "Admin", mancom: "Mancom", tagging: "Tagging", files: "Files" }[S.view] || TAB_TITLES[S.tab];
   return `${name} · ${APP.name}`;
 }
 
@@ -311,6 +327,8 @@ function render() {
   if (S.view === "accountability") board.render();
   if (S.view === "admin") admin.render();
   if (S.view === "mancom") mancom.render();
+  if (S.view === "tagging") tagging.render();
+  if (S.view === "files") files.render();
   queue.paint();      // the Queue tab, its peek and the queue page
 }
 
@@ -319,7 +337,7 @@ function initials(name) {
 }
 
 function renderHeader() {
-  $("#appVersion").textContent = `v${APP.version}`;
+  $("#appVersion").textContent = $("#loginVersion").textContent = `v${APP.version}`;
   $("#appVersion").title = `${APP.name} version ${APP.version}`;
   const signedIn = !!auth.currentToken();
   $("#envBadge").hidden = !ENV_LABEL;
@@ -333,6 +351,8 @@ function renderHeader() {
   const admin = access() === "admin", editor = admin || access() === "editor";
   $("#workLink").hidden = !signedIn || !editor;
   $("#mancomLink").hidden = !signedIn || !editor;
+  $("#tagLink").hidden = !signedIn || !editor;
+  $("#filesLink").hidden = !signedIn || !editor;
   $("#boardLink").hidden = !signedIn;
   $("#adminLink").hidden = !signedIn || !admin;
   for (const a of $$(".nav a")) {
@@ -371,17 +391,19 @@ function renderLogin() {
 
 async function login(returnTo) {
   try {
-    await auth.startLogin(returnTo || S.returnTo || "#/briefs");
+    await auth.startLogin(returnTo || S.returnTo || "#/universe");
   } catch (e) {
     S.loginNote = e.message;
     if (S.view === "login") renderLogin(); else toast(e.message, { type: "error" });
   }
 }
 
-/* A session ended (the clock, a dead-token code from Lark, Log out): auth.end() has
-   cleared the login; drop what's on screen. Drafts stay, so a new login picks up where this left off. */
+/* A session ended (the clock, a dead-token code from Lark, Log out, here or in another tab or
+   tool: they share the login): auth.end() has cleared the login; drop what's on screen. Drafts
+   stay, so a new login picks up where this left off. */
 function sessionEnded(message) {
   for (const d of document.querySelectorAll("dialog[open]")) d.close();   // any open sheet: the push sheet or invoice details
+  resetLowWarning();
   S.data = null; S.lists = null; S.user = null; S.userLoaded = false; S.loadError = null;
   S.loginNote = message || "Your login ended after about 2 hours. Log in again to keep going.";
   S.returnTo = location.hash || "#/accountability";
@@ -389,6 +411,25 @@ function sessionEnded(message) {
   render();
 }
 auth.onEnded(sessionEnded);
+
+/* Another tab, of Polaris or another Mineski tool, logged in or renewed the login (js/session.js).
+   A tab on the login screen goes straight in and loads; the others repaint the time left. If it's
+   someone else now, what this tab loaded for the previous person goes first. */
+const personOf = (u) => (u && (u.email || u.name)) || "";
+function sharedLogin({ renewed }) {
+  resetLowWarning();   // a fresh 2 hours: the "ends at" warning no longer applies
+  S.loginNote = "";
+  const was = personOf(S.user);
+  auth.loadUser().then((u) => {
+    if (was && personOf(u) !== was) { S.data = null; S.lists = null; S.loadError = null; S.user = u; onRoute(); return; }
+    S.user = u;
+    renderHeader();
+    if (S.view === "settings") renderSettings();
+  }).catch(() => {});
+  if (renewed) return tickSession();
+  if (S.view !== "busy") onRoute();   // busy: this tab is finishing its own login
+}
+auth.onShared(sharedLogin);
 
 /* Every write needs a little time left on the login (a longer task, like several
    uploads, asks for more). */
@@ -423,6 +464,8 @@ async function loadData({ quiet = false } = {}) {
       collections.renderLoader();
       andon.renderLoader();
       sources.renderLoader();
+      if (S.view === "tagging") tagging.render();
+      if (S.view === "files") files.render();
     });
     S.data = res.data;
     S.fields = res.fields;
@@ -459,6 +502,13 @@ function recompute() {
     par: has("par", "brief") ? parCards(d.par, d.brief, uni, pending, RULES) : none(),
     invoice: has("invoice", "collections") ? collectionCards(d.invoice, uni, coll, pending, RULES) : none(),
   };
+  // The Universe tab: the briefs and the PARs waiting for the Universe, as one list,
+  // newest first. (brief and par stay as lists of their own for the queue and links.)
+  const sum = (a, b) => Object.fromEntries([...new Set([...Object.keys(a), ...Object.keys(b)])].map(k => [k, (a[k] || 0) + (b[k] || 0)]));
+  S.lists.universe = {
+    cards: [...S.lists.brief.cards, ...S.lists.par.cards].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0)),
+    hidden: sum(S.lists.brief.hidden || {}, S.lists.par.hidden || {}),
+  };
   if (d.andon) {
     S.lists.andon = has("brief") ? briefCards(d.brief, indexUniverse(d.andon), RULES,
       { allDepartments: true, kind: "andon" }) : none();   // the same IGNORE box as the Universe
@@ -467,6 +517,9 @@ function recompute() {
     S.lists.andon.cards = [...S.lists.andon.cards, ...approvals.cards].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
     S.pmPool = pmPool(d.andon, d.universe);
   }
+  // …and the Universe tab's projects with a blank Other Attachments whose brief has files (last).
+  const files = has("brief") ? fileCards(d.universe, d.brief, RULES, { fields: { universe: fieldsOf("universe"), brief: fieldsOf("brief") } }) : none();
+  S.lists.universe.cards = [...S.lists.universe.cards, ...files.cards];
   // The audit: Universe and ANDON cells left blank that the brief can fill.
   const byCode = briefsByCode(d.brief || [], RULES);
   // Custom tags (Settings > Custom tags), from the Variables table: a row marked with
@@ -479,10 +532,17 @@ function recompute() {
   const andonAudit = d.andon ? auditCards("andon", d.andon, d.brief || [], RULES,
     { hide: S.auditHide, byCode, options: ctx.optionsOf("andon"), fields: fieldsOf("andon"), ...tagsFor("andon") })
     : { cards: [], tagged: [], hidden: { noBrief: 0, hidden: 0 } };
+  // …and projects whose PM isn't the same in the Universe and ANDON (or is blank in either).
+  // Both are tagged on the Universe row (ANDON has no Tags column).
+  const syncOpts = { fields: { universe: fieldsOf("universe"), andon: fieldsOf("andon") }, hide: S.auditHide, ...tagsFor("universe") };
+  const noSync = { cards: [], tagged: [], hidden: 0 };
+  const pm = d.andon ? pmCards(d.universe, d.andon, RULES, syncOpts) : noSync;
+  // …and projects whose CE link isn't the same in both (or is blank in either).
+  const ce = d.andon ? ceCards(d.universe, d.andon, RULES, syncOpts) : noSync;
   S.lists.audit = {
-    cards: [...uniAudit.cards, ...andonAudit.cards].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0)),
-    tagged: tagGroups([...uniAudit.tagged, ...andonAudit.tagged], S.customTags.map(x => x.tag)),
-    hidden: { hiddenHere: uniAudit.hidden.hidden + andonAudit.hidden.hidden },
+    cards: [...uniAudit.cards, ...andonAudit.cards].sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0)).concat(pm.cards, ce.cards),
+    tagged: tagGroups([...uniAudit.tagged, ...andonAudit.tagged, ...pm.tagged, ...ce.tagged], S.customTags.map(x => x.tag)),
+    hidden: { hiddenHere: uniAudit.hidden.hidden + andonAudit.hidden.hidden + pm.hidden + ce.hidden },
   };
   S.pool = peoplePool(d.universe, d.brief || []);
   // Accountability: every blank the rules ask for, and who's on it (the board, the Admin page).
@@ -510,6 +570,35 @@ function afterPush(c, res, payload, extra = {}) {
   const d = S.data;
   if (c.kind === "audit") return afterFill(c, res);
   if (c.kind === "edit") return afterEdit(c, res, extra);
+  if (c.kind === "pm" || c.kind === "ce") {   // one PM (or CE link), set in the Universe and ANDON
+    for (const r of res.results) {
+      const rec = (d[r.table] || []).find(x => x.record_id === r.recordId);
+      if (rec) Object.assign(rec.fields, r.written);
+    }
+    recompute();
+    render();
+    const title = c.kind === "ce" ? `${c.code}'s CE link is now the same in the Universe and ANDON.`
+      : `${c.code}'s PM is now ${extra.pmName || "set"} in the Universe and ANDON.`;
+    if (res.readBackError || (res.mismatches && res.mismatches.length)) {
+      const list = res.mismatches && res.mismatches.length
+        ? res.mismatches.map(m => `${m.field}: sent “${m.want}”, Lark has “${m.got}”`).join("; ") : describe(res.readBackError);
+      return { title, dest: "universe", warn: true, detail: `Check these in Lark: ${list}.` };
+    }
+    return { title, dest: "universe", warn: false, detail: "" };
+  }
+  if (c.kind === "files") {             // the brief's files, uploaded into the Universe row
+    const rec = (d.universe || []).find(r => r.record_id === res.recordId);
+    if (rec) rec.fields[c.field] = extra.cell;
+    recompute();
+    render();
+    const n = extra.cell.length;
+    const title = `Uploaded ${n} file${n === 1 ? "" : "s"} to ${c.code}'s ${c.field}.`;
+    if (res.readBackError || (res.mismatches && res.mismatches.length)) {
+      const detail = res.mismatches && res.mismatches.length ? `Lark's ${c.field} doesn't list every file sent.` : describe(res.readBackError);
+      return { title, dest: "universe", warn: true, detail: `Check ${c.field} in Lark: ${detail}` };
+    }
+    return { title, dest: "universe", warn: false, detail: extra.cell.map(f => f.name).join(", ") };
+  }
   if (c.kind === "approval") {          // a PAR's Request No. went into ANDON's Approval
     const rec = (d.andon || []).find(r => r.record_id === res.recordId);
     if (rec) Object.assign(rec.fields, res.written);
@@ -628,7 +717,7 @@ function renderSettings() {
       h("div", { class: "account-actions" },
         h("button", { type: "button", class: "btn btn-sm", onclick: () => login(location.hash) }, "Log in again"),
         h("button", { type: "button", class: "btn btn-sm btn-ghost", onclick: () => {
-          auth.end("You've logged out of Polaris. You're still logged in to Lark itself.");
+          auth.logout();   // of every Mineski tool in this browser: they share the login
           location.hash = "#/";
         } }, ic("logout"), "Log out")));
   } else {
@@ -636,7 +725,7 @@ function renderSettings() {
       h("div", { class: "account-text" }, h("b", null, "You're not logged in."),
         h("span", null, "Log in with Lark to see and push changes. A login lasts about 2 hours.")),
       h("div", { class: "account-actions" },
-        h("button", { type: "button", class: "btn btn-sm btn-primary", onclick: () => login("#/briefs") }, "Log in with Lark")));
+        h("button", { type: "button", class: "btn btn-sm btn-primary", onclick: () => login("#/universe") }, "Log in with Lark")));
   }
 
   const proxyState = conn.blocked ? ["is-err", "Blocked by this browser. Allow it in your ad blocker, then reload."]
@@ -718,6 +807,16 @@ function renderTags() {
     canWrite ? null : h("p", { class: "set-sub" }, problemsFor("variables")[0] || "Your login can only read the tables. Log in again to change the tags.")].filter(Boolean));
 }
 
+/* Write one new custom tag (a Variables row) and add it to the list. Also used by an
+   audit card's Hide > "Mark as another tag…" (ctx.addCustomTag). */
+async function createCustomTag(tag) {
+  const rec = await track(() => addVariable(call, tables.variables, S.tagCols, RULES.tags.variable, tag));
+  S.data.variables.push({ record_id: rec.record_id, fields: { ...rec.fields, [S.tagCols.name]: RULES.tags.variable, [S.tagCols.value]: tag } });
+  recompute();
+}
+ctx.addCustomTag = createCustomTag;
+ctx.canAddCustomTag = () => !!S.tagCols && canWriteFor("variables");
+
 async function addTag(raw, err, btn) {
   const tag = String(raw || "").replace(/\s+/g, " ").trim();
   const say = (m) => { err.textContent = m; err.hidden = !m; };
@@ -729,9 +828,7 @@ async function addTag(raw, err, btn) {
   tagBusy = true;
   busy(btn, true, "Adding…");
   try {
-    const rec = await track(() => addVariable(call, tables.variables, S.tagCols, RULES.tags.variable, tag));
-    S.data.variables.push({ record_id: rec.record_id, fields: { ...rec.fields, [S.tagCols.name]: RULES.tags.variable, [S.tagCols.value]: tag } });
-    recompute();
+    await createCustomTag(tag);
     const field = $("#tagNew");
     if (field) field.value = "";
     toast(`Added “${tag}”.`, { type: "success", detail: `Audit cards now offer “Mark as ${tag}” under Hide.` });
@@ -795,12 +892,17 @@ function reloadLocal() {
 }
 
 /* ======================= session clock ======================= */
-let warnedLow = false;
+let warnedLow = false, closeLow = null;
+function resetLowWarning() {
+  warnedLow = false;
+  if (closeLow) closeLow();
+  closeLow = null;
+}
 function tickSession() {
   if (!auth.hadSession()) return;
   if (!auth.currentToken()) {
     // A write or upload still running finishes first (track() ticks again when it settles).
-    if (!inflight && S.view !== "login") auth.end();
+    if (!auth.busyWorking() && S.view !== "login") auth.end();
     return;
   }
   renderHeader();
@@ -808,7 +910,7 @@ function tickSession() {
   if (line) line.textContent = sessionLine();
   if (!warnedLow && auth.msLeft() < 5 * 60 * 1000) {
     warnedLow = true;
-    toast(`Your login ends at ${fmt.time(auth.endsAt())}.`, {
+    closeLow = toast(`Your login ends at ${fmt.time(auth.endsAt())}.`, {
       type: "warn", timeout: 0, detail: "Log in again to keep working without a break.",
       action: "Log in again", onAction: () => login(location.hash),
     });
@@ -852,7 +954,7 @@ onConn(() => {
 window.addEventListener("hashchange", onRoute);
 // A write or upload is running: closing the tab now could lose it.
 // So could leaving the Admin page with changes that weren't saved.
-window.addEventListener("beforeunload", (e) => { if (inflight || admin.dirty()) { e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("beforeunload", (e) => { if (auth.busyWorking() || admin.dirty()) { e.preventDefault(); e.returnValue = ""; } });
 matchMedia("(min-width: 1280px)").addEventListener("change", () => render());
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;

@@ -175,6 +175,18 @@ export function rulesBehindDefaults(rules, defaults) {
   });
 }
 
+/* Starting rules that the saved rules don't have (added to Sanctum after the rules were
+   saved, e.g. the PM and CE link checks in 2.7.0), each with the index it would take:
+   just after the saved rule that comes before it in the starting rules. */
+export function rulesMissingFromDefaults(rules, defaults) {
+  const have = new Set(rules.map(r => r.id));
+  return defaults.flatMap((d, i) => {
+    if (have.has(d.id)) return [];
+    const before = defaults.slice(0, i).reverse().find(x => have.has(x.id));
+    return [{ rule: d, after: before ? before.id : null }];
+  });
+}
+
 /* May this person change things (fill blanks, dismiss them, use Data Audit), short of the
    Admin page? Admins, and everyone tagged in a named role (Account Director, Finance…) or
    as a tribe lead. */
