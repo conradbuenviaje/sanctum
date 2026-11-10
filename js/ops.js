@@ -49,6 +49,10 @@ const TYPE_NAMES = { 1: "Text", 2: "Number", 3: "Single select", 4: "Multi selec
 export function schemaSpec(rules) {
   // Custom tags only where rules.tags.tables says there's a Tags column.
   const tagsIn = (key) => (rules.tags.tables || []).includes(key);
+  // Extra columns read when the table has them: the approval links (URL columns named
+  // like rules.filesPage.approvalColumns) the Files page lists.
+  const approvalLinks = (f) => f.type === T.url && f.field_name !== "Request No." && !!(rules.filesPage && rules.filesPage.approvalColumns
+    && rules.filesPage.approvalColumns.test(f.field_name));
   return {
     universe: {
       // Every column (Sanctum): an accountability rule the Admin page adds can name any
@@ -61,12 +65,18 @@ export function schemaSpec(rules) {
              "RFP Received Date", "Status", "Year", "Amount (VAT-Inc.)", "Business Unit", rules.universeIgnoreField,
              // …and what the audit compares with the brief
              "MKT", "VAT%", "Project Description", "Project Start", "Project End",
+             // …and the PM, which must match ANDON's PM (LEAD) (the PM audit)
+             rules.pmSync.universe,
+             // …and the CE link, which must match ANDON's (the CE audit)
+             rules.ceSync.universe,
              // …and the rest a push writes, so the push sheet can show the whole row
              "Mancom Phase", "Other Links",
              // …and what the team notes on a project, shown in the push sheet's row (read only)
              "Quick Remarks",
              // …and what a won (or lost) project must have (the audit asks for these)
              ...rules.auditRequired.fields, ...rules.auditLost.fields, rules.auditFiles.field,
+             // …and the brief's files, uploaded by hand
+             rules.briefFiles.to,
              // …and the custom tags an audit card is marked with
              ...(tagsIn("universe") ? [rules.tags.field] : [])],
       index: ["Project Code", "Project", "Client", "PAR"],
@@ -81,7 +91,7 @@ export function schemaSpec(rules) {
       // Hides a won project from the Invoices list, if the Universe has this column.
       // The signed CE: an attachment the audit uploads to (its type is checked if it's there).
       // Custom tags (plain text, comma-separated): "Mark as …" on an audit card writes here.
-      optional: { [rules.universeIgnoreField]: T.checkbox, [rules.auditFiles.field]: T.file,
+      optional: { [rules.universeIgnoreField]: T.checkbox, [rules.auditFiles.field]: T.file, [rules.briefFiles.to]: T.file,
                   ...(tagsIn("universe") ? { [rules.tags.field]: T.text } : {}) },
       options: {
         "VAT%": ["12%", "0%"],
@@ -93,17 +103,22 @@ export function schemaSpec(rules) {
       neededBy: { invoice: ["Amount (VAT-Inc.)", "Business Unit"],
                   // the audit can't ask for a column the Universe doesn't have
                   "audit:universe": [...rules.auditRequired.fields, ...rules.auditLost.fields, rules.auditFiles.field],
+                  // the brief's files are uploaded into this one
+                  files: [rules.briefFiles.to],
+                  // the CE audit's Fill writes the link here (and in ANDON)
+                  ce: [rules.ceSync.universe],
                   // without a Tags column, only "Mark as …" stops (Hide on this device still works)
                   ...(tagsIn("universe") ? { "tag:universe": [rules.tags.field] } : {}) },
     },
     collections: {
       read: ["Project Code", "Invoice Request", "AR Name", "Invoice Amount", "Currency", "Sales Remarks", "Status",
-             "AM", "Invoice Number", "SI Number", "Invoice", "Invoice Date"],
+             "AM", "Invoice Number", "SI Number", "Invoice", "Invoice Date", "Collection Date"],
       index: ["Project Code", "Invoice Request", "AR Name", "Invoice Amount", "Currency", "Status"],
       fields: {
         "AR Name": T.text, "Project Code": T.text, "Invoice Amount": T.number,
         "Currency": T.select, "Status": T.select, "Business Unit": T.select, "Invoice Request": T.number,
         "Sales Remarks": T.text, "Invoice Number": T.text, "SI Number": T.text, "Invoice": T.file, "Invoice Date": T.date,
+        "Collection Date": T.date,   // asked for when an approved request moves its row to For Collection
       },
       options: {
         "Status": [...Object.values(rules.collectionStages), ...rules.invalidStatuses],
@@ -120,6 +135,7 @@ export function schemaSpec(rules) {
         "Business Unit": T.select,
       },
       optional: { "Required Tools": T.multi },
+      readAlso: approvalLinks,   // the Files page's approval links
     },
     andon: {
       // What a person types into an ANDON row. ANDON fills the rest (Brief, Brief Status,
@@ -131,7 +147,9 @@ export function schemaSpec(rules) {
         "Business Unit": T.select, "Tools": T.multi, "TRIBE": T.select, "Event Start": T.date, "Event End": T.date,
       },
       // Custom tags, only if rules.tags.tables lists ANDON (it doesn't: no Tags column there).
-      ...(tagsIn("andon") ? { optional: { [rules.tags.field]: T.text }, neededBy: { "tag:andon": [rules.tags.field] } } : {}),
+      ...(tagsIn("andon") ? { optional: { [rules.tags.field]: T.text } } : {}),
+      // The CE audit's Fill writes the link here (and in the Universe).
+      neededBy: { ce: [rules.ceSync.andon], ...(tagsIn("andon") ? { "tag:andon": [rules.tags.field] } : {}) },
     },
     variables: {
       // Settings the team keeps in Lark, one row per value (RULES.tags). Every column is
@@ -145,6 +163,7 @@ export function schemaSpec(rules) {
         "Request No.": T.url, "Project Code": T.text, "Project Name": T.text, "Status": T.select,
         "Submitted at": T.date, "Associated Project Brief": T.text, "IGNORE": T.checkbox,
       },
+      readAlso: approvalLinks,
     },
     invoice: {
       fields: {
@@ -155,6 +174,7 @@ export function schemaSpec(rules) {
       // Used when present: the PAR a request belongs to (to find its project when
       // the typed code is wrong) and when it was approved (to match older rows).
       optional: { "Associated Project Approval": T.text, "Completed at": T.date },
+      readAlso: approvalLinks,
     },
   };
 }
@@ -163,19 +183,22 @@ export function schemaSpec(rules) {
    against in the push sheet (js/rowdoc.js), so a destination table reads them too. */
 const SHOWN_COMPUTED = new Set([18, 19, 20, 21]);
 const MAX_FIELD_NAMES = 50;   // Lark's limit on a records/search field list
+const MAX_FIELD_NAME_LEN = 50;   // …and on each name in it (PAR's attachment column is longer)
 
 /* The columns to read for a table, from its live field list: the spec's (only
    those the table has: Lark refuses a list naming a missing one) and, for the
    tables pushes write to, every lookup and formula. Past Lark's 50-name limit, or
-   for read "*": undefined, meaning every column. */
+   for read "*", or with a name over 50 characters (Lark refuses those in the list):
+   undefined, meaning every column. */
 export function columnsToRead(key, fields, rules) {
   const t = schemaSpec(rules)[key];
   if (!t || t.read === "*") return undefined;
   const present = new Set(fields.map(f => f.field_name));
   const base = t.read || [...Object.keys(t.fields), ...Object.keys(t.optional || {})];
   const computed = t.read ? fields.filter(f => SHOWN_COMPUTED.has(f.type)).map(f => f.field_name) : [];
-  const names = [...new Set([...base, ...computed])].filter(n => present.has(n));
-  return names.length > MAX_FIELD_NAMES ? undefined : names;
+  const also = t.readAlso ? fields.filter(t.readAlso).map(f => f.field_name) : [];
+  const names = [...new Set([...base, ...computed, ...also])].filter(n => present.has(n));
+  return names.length > MAX_FIELD_NAMES || names.some(n => n.length > MAX_FIELD_NAME_LEN) ? undefined : names;
 }
 
 const tableUrl = (t) => `${OPEN_API}/bitable/v1/apps/${encodeURIComponent(t.app)}/tables/${encodeURIComponent(t.table)}`;
@@ -493,6 +516,36 @@ export async function saveEdit(call, t, recordId, write, loaded, defs) {
     readBackError = e;
   }
   return { recordId, written: write, record, mismatches, readBackError };
+}
+
+/* One PM for a project in the Universe and ANDON (the PM audit): `rows` =
+   [{ table, rowId, loaded (its fields as the card saw them) }], `writes` = { table:
+   { column: [{id}] } }. Every row is re-read FIRST: if any of the PM cells changed in
+   Lark since the card was made, nothing is written anywhere (no half-done project).
+   Rows that already have that PM are left alone; if all do, AlreadyDone. Then each
+   remaining row is written and read back.
+   Resolves { recordId (the first row), written (the first row's write), results:
+   [{ table, recordId, written, mismatches, readBackError }], mismatches, readBackError }. */
+export async function syncPm(call, tables, rows, writes, defsOf, doneMessage = "Both already have that PM.") {
+  const todo = [];
+  for (const r of rows) {
+    const now = await findRecord(call, tables[r.table], r.rowId);
+    if (!now) throw Object.assign(new Error("gone"), { userMessage: `A ${TABLE_TITLES[r.table]} row of this project isn't in Lark any more. Refresh, then try again.` });
+    const { stale, done } = editCheck(writes[r.table], defsOf(r.table), r.loaded, now.fields);
+    if (stale.length) throw new EditConflict(stale.map(k => `${TABLE_TITLES[r.table]}'s ${k}`));
+    if (!done) todo.push(r);
+  }
+  if (!todo.length) throw new AlreadyDone(doneMessage);
+  const results = [];
+  for (const r of todo) {
+    const t = tables[r.table], written = writes[r.table];
+    await updateRecord(call, t, r.rowId, written);
+    results.push({ table: r.table, recordId: r.rowId, written, ...await readBack(call, t, r.rowId, written) });
+  }
+  const first = results[0];
+  return { recordId: first.recordId, written: first.written, results,
+           mismatches: results.flatMap(x => (x.mismatches || []).map(m => ({ ...m, field: `${TABLE_TITLES[x.table]}'s ${m.field}` }))),
+           readBackError: (results.find(x => x.readBackError) || {}).readBackError || null };
 }
 
 /* Mark a row with a custom tag (add = true) or take it off. The Tags cell is plain

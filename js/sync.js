@@ -731,6 +731,79 @@ export function customTagsFrom(records, cols, variable) {
   return out;
 }
 
+/* ======================= the Tagging page ======================= */
+
+// Letters and digits only, lowercased: "Federal-Land " and "federal land" are one tag.
+const tagKey = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, "");
+function editDistance(a, b) {
+  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const was = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = was;
+    }
+  }
+  return row[b.length];
+}
+
+/* The tags in `known` that `tag` is probably a misspelling of: the same letters
+   ("Federal-Land"), or a letter or two off ("Federal Lnad"). Not `tag` itself. */
+export function lookalikeTags(tag, known) {
+  const k = tagKey(tag);
+  if (!k) return [];
+  const room = k.length >= 8 ? 2 : k.length >= 4 ? 1 : 0;
+  return (known || []).filter(t => String(t).toLowerCase() !== String(tag).toLowerCase())
+    .filter(t => { const o = tagKey(t); return o === k || (room && Math.abs(o.length - k.length) <= room && editDistance(o, k) <= room); });
+}
+
+/* A tag typed under an audit card's Hide > "Mark as another tag…": { tag, isNew, like }
+   or { error }. `custom` = the custom tags, `inUse` = the tags already in Tags cells.
+   A custom tag typed in any case is that tag (isNew false). Otherwise it becomes a new
+   custom tag, spelled as it's already used if it is ("event" → "Event"); `like` = the
+   tags it looks like a misspelling of, to ask about first. */
+export function pickTag(raw, custom = [], inUse = []) {
+  const typed = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!typed) return { error: "Type the tag first." };
+  if (/[,;]/.test(typed)) return { error: "A tag can't have a comma or semicolon in it: the Tags column uses them to separate tags." };
+  const same = (list) => list.find(t => String(t).toLowerCase() === typed.toLowerCase());
+  const hit = same(custom);
+  if (hit) return { tag: hit, isNew: false, like: [] };
+  const tag = same(inUse) || typed;
+  const all = [];
+  for (const t of [...custom, ...inUse]) if (!all.some(x => x.toLowerCase() === String(t).toLowerCase())) all.push(String(t));
+  return { tag, isNew: true, like: lookalikeTags(tag, all) };
+}
+
+/* Every Universe project and its tags, Project Code Z-A (newest first). `query`
+   searches the code, name, status and tags; `tag` keeps the projects with that tag
+   ("" none: every project; null-like "(none)": the untagged). Also every tag in use,
+   most used first, each with its count and the tags it looks like a misspelling of. */
+export const UNTAGGED = "(no tags)";
+export function taggingView(records, field, { query = "", tag = "" } = {}) {
+  const all = (records || []).map(r => {
+    const f = r.fields || {};
+    return { id: r.record_id, code: normCode(plain(f["Project Code"])) || clean(f["Project Code"]), name: clean(f["Project"]),
+             status: clean(f["Status"]), year: clean(f["Year"]), tags: tagsOf(f[field]) };
+  });
+  const counts = new Map();   // lowercased → { tag (first spelling seen), count }
+  for (const r of all) for (const t of r.tags) {
+    const k = t.toLowerCase();
+    if (counts.has(k)) counts.get(k).count++; else counts.set(k, { tag: t, count: 1 });
+  }
+  const tags = [...counts.values()].sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  const names = tags.map(t => t.tag);
+  for (const t of tags) t.like = lookalikeTags(t.tag, names);
+  const words = String(query).toLowerCase().split(/\s+/).filter(Boolean);
+  const want = String(tag || "").toLowerCase();
+  const rows = all.filter(r => (!want ? true : want === UNTAGGED ? !r.tags.length : r.tags.some(t => t.toLowerCase() === want))
+      && words.every(w => `${r.code} ${r.name} ${r.status} ${r.tags.join(" ")}`.toLowerCase().includes(w)))
+    .sort((a, b) => (!a.code) - (!b.code) || b.code.localeCompare(a.code, "en", { numeric: true }));
+  return { rows, tags, total: all.length, untagged: all.filter(r => !r.tags.length).length };
+}
+
 /* The custom tag a row is marked with (the first, in the custom tags' order), or null. */
 export function customTagOf(fields, tagField, tags) {
   const mine = tagsOf((fields || {})[tagField]);
@@ -797,6 +870,47 @@ export function approvalCards(andon, pars, rules, { fields } = {}) {
   }
   cards.sort(bySubmittedDesc);
   return { cards, hidden };
+}
+
+/* ======================= the brief's files → the Universe ======================= */
+
+/* The Universe tab's file cards: a Universe row whose rules.briefFiles.to (an
+   attachment column) is blank, and whose project's Project Brief links to its files
+   in Lark Approval (rules.briefFiles.link, on the newest brief with the code that
+   wasn't voided). Polaris can't read Lark Approval, so the card links there: the
+   person downloads the files and uploads them through Polaris. No card for a row
+   whose Status is in rules.briefFiles.skipStatuses, nor when either table lacks its
+   column (in `fields`). Newest brief first. */
+export function fileCards(universe, briefs, rules, { fields = {} } = {}) {
+  const cfg = rules.briefFiles;
+  const has = (table, col) => !fields[table] || fields[table].some(f => f.field_name === col);
+  if (!cfg || !has("universe", cfg.to) || !has("brief", cfg.link)) return { cards: [] };
+  const best = new Map();
+  for (const r of briefs || []) {
+    const f = r.fields || {};
+    const code = normCode(plain(f["Project Code"]));
+    const v = f[cfg.link];
+    const link = v && typeof v.link === "string" && /^https:\/\//.test(v.link) ? v.link : "";
+    if (!code || !link || rules.voidStatuses.includes(clean(f["Status"]))) continue;
+    const at = num(f["Submitted at"]) || 0;
+    if (best.has(code) && best.get(code).submittedAt >= at) continue;
+    best.set(code, { link, label: clean(v.text), submittedAt: at, requestNo: requestNo(f["Request No."]), name: clean(f["Project Name"]) });
+  }
+  const cards = [];
+  for (const row of universe || []) {
+    const f = row.fields || {};
+    const code = normCode(plain(f["Project Code"]));
+    const b = code && best.get(code);
+    const status = clean(f["Status"]);
+    if (!b || !isBlank(f[cfg.to]) || (cfg.skipStatuses || []).includes(status)) continue;
+    cards.push({
+      kind: "files", id: `files:${row.record_id}`, rowId: row.record_id, code, field: cfg.to,
+      name: clean(f["Project"]) || b.name, status, link: b.link, label: b.label, requestNo: b.requestNo,
+      submittedAt: b.submittedAt || null, notes: [], blocked: "",
+    });
+  }
+  cards.sort(bySubmittedDesc);
+  return { cards };
 }
 
 export function auditCards(target, records, briefs, rules, { hide = new Set(), options, fields, byCode, tags = [], tagField } = {}) {
@@ -1231,8 +1345,8 @@ export function collectionCards(invoices, uni, coll, pendingCodes, rules) {
       c.notes.push(`“${p.row.arName}” (${moneyOf(p.row)}, ${p.row.status}) is most likely this invoice: it has ` +
                    "the same amount and was recorded without a request number.");
     } else if (p) {
-      if (p.row.currency && c.currency && p.row.currency !== c.currency) {
-        c.notes.push(`“${p.row.arName}” is in ${p.row.currency}; the request is in ${c.currency}.`);
+      if (c.amount !== null && (!near(p.row.amount, c.amount, 0.005) || (c.currency && p.row.currency !== c.currency))) {
+        c.notes.push(`“${p.row.arName}” is ${moneyOf(p.row)}; it becomes the request's ${moneyOf(c)}.`);
       }
     } else {
       const left = x.legacy.filter(e => !taken.has(e.id));
@@ -1316,7 +1430,9 @@ export function collectionsChange(card, choices, options, rules) {
   } else {
     if (row.ir !== card.requestNo) out["Invoice Request"] = Number(card.requestNo);
     if (row.status !== to) out["Status"] = to;
-    if (card.step === "approved") {   // the invoice as issued: its amount may differ from the plan
+    // The row takes the request's amount and currency: For Invoicing rows start as the
+    // Universe's PHP amount, and the invoice as filed or issued may differ from that.
+    if (card.step === "filed" || card.step === "approved") {
       if (card.amount !== null && !near(row.amount, card.amount, 0.005)) out["Invoice Amount"] = card.amount;
       if (currency && currency !== row.currency) out["Currency"] = currency;
     }
@@ -1702,4 +1818,240 @@ export function attachmentLink(json, fileToken) {
   const hit = urls.find(u => u && u.file_token === fileToken) || (urls.length === 1 ? urls[0] : null);
   const link = hit && typeof hit.tmp_download_url === "string" ? hit.tmp_download_url : "";
   return /^https:\/\//.test(link) ? link : "";
+}
+
+/* ======================= PM: the same in the Universe and ANDON ======================= */
+/* A project in both the Universe and ANDON whose Universe PM (rules.pmSync.universe)
+   and ANDON PM (LEAD) (rules.pmSync.andon, in every ANDON row with its code) differ,
+   or where either is blank, gets an Audit card. The card suggests ANDON's PM (it's
+   Project Management's board), else the Universe's. A table without its PM column
+   (in `fields`) gives no cards. `loaded` keeps each PM cell as the card saw it, so
+   the push can tell if it changed in Lark meanwhile. */
+export function pmCards(universe, andon, rules, { fields = {}, hide, tags, tagField } = {}) {
+  const cfg = rules.pmSync;
+  const out = { cards: [], tagged: [], hidden: 0 };
+  if (!cfg) return out;
+  const has = (table, col) => !fields[table] || fields[table].some(f => f.field_name === col);
+  if (!has("universe", cfg.universe) || !has("andon", cfg.andon)) return out;
+  const byCode = new Map();
+  for (const r of andon || []) {
+    const code = normCode(plain((r.fields || {})["Project Code"]));
+    if (code) byCode.set(code, [...(byCode.get(code) || []), r]);
+  }
+  const key = (list) => list.map(u => u.id).sort().join(",");
+  for (const row of universe || []) {
+    const f = row.fields || {};
+    const code = normCode(plain(f["Project Code"]));
+    const rows = code && byCode.get(code);
+    if (!rows) continue;
+    const uPm = people(f[cfg.universe]);
+    const aPms = rows.map(r => people((r.fields || {})[cfg.andon]));
+    const blank = !uPm.length || aPms.some(p => !p.length);
+    const differ = aPms.some(p => key(p) !== key(uPm));
+    if (!blank && !differ) continue;
+    const suggestion = (aPms.find(p => p.length) || uPm).slice(0, 1);
+    sortOut({
+      kind: "pm", id: `pm:${row.record_id}`, rowId: row.record_id, code,
+      name: clean(f["Project"]) || clean((rows[0].fields || {})["Project"]), status: clean(f["Status"]),
+      universePm: uPm, andonPm: aPms, andonRows: rows.map(r => r.record_id), blank, suggestion,
+      loaded: { universe: { [cfg.universe]: f[cfg.universe] },
+                andon: Object.fromEntries(rows.map(r => [r.record_id, { [cfg.andon]: (r.fields || {})[cfg.andon] }])) },
+      submittedAt: null, notes: [], blocked: "",
+      // Hidden on this device until either PM changes.
+      hideKey: `pm:${row.record_id}|${key(uPm)}|${aPms.map(key).join("/")}`,
+    }, f, { hide, tags, tagField }, out);
+  }
+  return byCodeDesc(out);
+}
+
+/* PM and CE cards are tagged on the project's Universe row (ANDON has no Tags column):
+   a row marked with a custom tag sends its card to that tag's group (card.tag), one
+   hidden on this device (card.hideKey in `hide`) is counted, the rest are listed. */
+function sortOut(card, universeFields, { hide, tags, tagField }, out) {
+  const tag = tagField && tags && tags.length ? customTagOf(universeFields, tagField, tags) : null;
+  if (tag) { card.tag = tag; out.tagged.push(card); return; }
+  if (hide && hide.has(card.hideKey)) { out.hidden++; return; }
+  out.cards.push(card);
+}
+function byCodeDesc(out) {
+  const order = (a, b) => b.code.localeCompare(a.code, "en", { numeric: true });
+  out.cards.sort(order);
+  out.tagged.sort(order);
+  return out;
+}
+
+/* The cells a PM Fill writes: the chosen person (one) in both tables. */
+export function pmWrites(person, rules) {
+  const v = person && person.id ? [{ id: person.id }] : null;
+  return { universe: { [rules.pmSync.universe]: v }, andon: { [rules.pmSync.andon]: v } };
+}
+
+/* ======================= the CE: the same link in the Universe and ANDON ======================= */
+/* The link in a URL cell ({link, text}), or a text cell holding one; "" when blank. */
+export function linkIn(v) {
+  if (v && typeof v === "object" && !Array.isArray(v) && typeof v.link === "string") return v.link.trim();
+  return clean(v);
+}
+// Compared without a trailing slash: the same sheet, pasted twice.
+const sameLink = (a, b) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+
+/* A project in both the Universe and ANDON whose Universe CE (rules.ceSync.universe) and
+   ANDON CE (rules.ceSync.andon, in every ANDON row with its code) aren't the same link,
+   or where either is blank, gets an Audit card, like the PM's. The card suggests
+   ANDON's link, else the Universe's; with both blank, the person pastes it. A table
+   without its column (in `fields`) gives no cards. */
+export function ceCards(universe, andon, rules, { fields = {}, hide, tags, tagField } = {}) {
+  const cfg = rules.ceSync;
+  const out = { cards: [], tagged: [], hidden: 0 };
+  if (!cfg) return out;
+  const has = (table, col) => !fields[table] || fields[table].some(f => f.field_name === col);
+  if (!has("universe", cfg.universe) || !has("andon", cfg.andon)) return out;
+  const byCode = new Map();
+  for (const r of andon || []) {
+    const code = normCode(plain((r.fields || {})["Project Code"]));
+    if (code) byCode.set(code, [...(byCode.get(code) || []), r]);
+  }
+  for (const row of universe || []) {
+    const f = row.fields || {};
+    const code = normCode(plain(f["Project Code"]));
+    const rows = code && byCode.get(code);
+    if (!rows) continue;
+    const uLink = linkIn(f[cfg.universe]);
+    const aLinks = rows.map(r => linkIn((r.fields || {})[cfg.andon]));
+    const blank = !uLink || aLinks.some(l => !l);
+    const differ = aLinks.some(l => !sameLink(l, uLink));
+    if (!blank && !differ) continue;
+    sortOut({
+      kind: "ce", id: `ce:${row.record_id}`, rowId: row.record_id, code,
+      name: clean(f["Project"]) || clean((rows[0].fields || {})["Project"]), status: clean(f["Status"]),
+      universeLink: uLink, andonLinks: aLinks, andonRows: rows.map(r => r.record_id), blank,
+      suggestion: aLinks.find(Boolean) || uLink,
+      loaded: { universe: { [cfg.universe]: f[cfg.universe] },
+                andon: Object.fromEntries(rows.map(r => [r.record_id, { [cfg.andon]: (r.fields || {})[cfg.andon] }])) },
+      submittedAt: null, notes: [], blocked: "",
+      // Hidden on this device until either link changes.
+      hideKey: `ce:${row.record_id}|${uLink}|${aLinks.join("/")}`,
+    }, f, { hide, tags, tagField }, out);
+  }
+  return byCodeDesc(out);
+}
+
+/* The cells a CE Fill writes: the one link in both tables (URL columns take {link, text}). */
+export function ceWrites(link, rules) {
+  const v = link ? { link, text: link } : null;
+  return { universe: { [rules.ceSync.universe]: v }, andon: { [rules.ceSync.andon]: v } };
+}
+
+/* A link a person typed: https only (so it opens), else "". */
+export const validLink = (s) => (/^https:\/\/[^\s/]+\.[^\s]+$/i.test(String(s || "").trim()) ? String(s).trim() : "");
+
+/* ======================= the Files page ======================= */
+/* Universe and Collections rows with files in the columns rules.filesPage lists, and
+   the approval links of the briefs, PARs and invoice requests. */
+
+// A part of a file name: no characters Windows or macOS refuse, spaces kept, at most 80.
+export function fileNamePart(s) {
+  return String(s || "").replace(/[\/:*?"<>|\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ")
+    .trim().replace(/[. ]+$/, "").slice(0, 80).trim();
+}
+// "Report.Final.PDF" → "pdf"; none (or something odd) → `fallback`.
+export function extOf(name, fallback = "") {
+  const m = String(name || "").match(/\.([A-Za-z0-9]{1,8})$/);
+  return m ? m[1].toLowerCase() : fallback;
+}
+const filesIn = (v) => (Array.isArray(v) ? v : []).filter(x => x && typeof x === "object" && x.file_token);
+
+/* The rows of `table` ("universe" or "collections") with at least one file:
+   [{ id, table, code, name, status, year, sub, files: [{ prefix, label, field, file }] }],
+   newest project code first. Collections rows take the project's name from the
+   Universe (by code), else their AR Name. */
+export function fileRows(table, records, rules, { universe = [] } = {}) {
+  const cols = (rules.filesPage || {})[table] || [];
+  const names = new Map();
+  if (table === "collections") {
+    for (const r of universe || []) {
+      const f = r.fields || {};
+      const code = normCode(plain(f["Project Code"]));
+      if (code && !names.has(code)) names.set(code, clean(f["Project"]));
+    }
+  }
+  const out = [];
+  for (const r of records || []) {
+    const f = r.fields || {};
+    const files = cols.flatMap(c => filesIn(f[c.field]).map(file => ({ prefix: c.prefix, label: c.label, field: c.field, name: c.name, file })));
+    if (!files.length) continue;
+    const code = normCode(plain(f["Project Code"])) || clean(f["Project Code"]);
+    const ar = clean(f["AR Name"]);
+    out.push({
+      id: r.record_id, table, code,
+      name: table === "collections" ? names.get(code) || ar : clean(f["Project"]),
+      status: clean(f["Status"]), year: clean(f["Year"]), invoiceNo: clean(f["Invoice Number"]),
+      sub: table === "collections" ? [clean(f["Invoice Number"]) && `Invoice ${clean(f["Invoice Number"])}`, ar].filter(Boolean).join(" · ") : "",
+      files,
+    });
+  }
+  return out.sort((a, b) => (!a.code) - (!b.code) || b.code.localeCompare(a.code, "en", { numeric: true }));
+}
+
+/* Each file of the picked rows with its name in the zip:
+   {prefix}_{project code}_{project name}_{n}.{its extension}, or the parts its column
+   lists in `name` (Collections: {project code}_{invoice number}) (n counts from 1 per
+   prefix and project, across rows: a project's second invoice row goes on from 2).
+   `prefixes` = the kinds to include (all when left out). Names never repeat. */
+export function zipEntries(rows, { prefixes } = {}) {
+  const counts = new Map(), used = new Set(), out = [];
+  for (const row of rows) {
+    for (const x of row.files) {
+      if (prefixes && !prefixes.includes(x.prefix)) continue;
+      const part = { code: fileNamePart(row.code) || "no-code", name: fileNamePart(row.name) || "no-name",
+                     invoice: fileNamePart(row.invoiceNo) || "no-invoice-number" };
+      const base = x.name ? x.name.map(k => part[k]).join("_") : [x.prefix, part.code, part.name].join("_");
+      const ext = extOf(x.file.name, x.prefix === "signed_ce" ? "pdf" : "");
+      let n = counts.get(base) || 0, name;
+      do { n++; name = `${base}_${n}${ext ? `.${ext}` : ""}`; } while (used.has(name.toLowerCase()));
+      counts.set(base, n);
+      used.add(name.toLowerCase());
+      out.push({ name, table: row.table, rowId: row.id, file: x.file, size: Number(x.file.size) || 0 });
+    }
+  }
+  return out;
+}
+
+/* The approval-link columns of a brief, PAR or invoice request table: URL columns
+   whose name matches rules.filesPage.approvalColumns (not Request No.). */
+export function approvalColumns(fields, rules) {
+  const re = (rules.filesPage || {}).approvalColumns;
+  return (fields || []).filter(f => f.type === 15 && f.field_name !== "Request No." && re && re.test(f.field_name)).map(f => f.field_name);
+}
+
+/* The rows of one approval table with a link in those columns, newest first:
+   [{ id, code, name, requestNo, request, status, submittedAt, links: [{ column, link, text }] }]. */
+export function approvalFileRows(records, columns) {
+  const out = [];
+  for (const r of records || []) {
+    const f = r.fields || {};
+    const links = columns.map(column => {
+      const v = f[column];
+      const link = linkIn(v);
+      return /^https:\/\//.test(link) ? { column, link, text: (v && typeof v === "object" && clean(v.text)) || column } : null;
+    }).filter(Boolean);
+    if (!links.length) continue;
+    const req = f["Request No."];
+    out.push({
+      id: r.record_id, code: normCode(plain(f["Project Code"])) || clean(f["Project Code"]),
+      name: clean(f["Project Name"]) || clean(f["Project"]), requestNo: requestNo(req),
+      request: req && typeof req.link === "string" && /^https:\/\//.test(req.link) ? req.link : "",
+      status: clean(f["Status"]), submittedAt: num(f["Submitted at"]), links,
+    });
+  }
+  return out.sort(bySubmittedDesc);
+}
+
+/* Rows matching a search (code, name, status, the extra line, file names). */
+export function filesMatch(row, query) {
+  const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const hay = [row.code, row.name, row.status, row.sub, row.requestNo,
+    ...(row.files || []).map(x => x.file.name), ...(row.links || []).map(l => l.text)].join(" ").toLowerCase();
+  return words.every(w => hay.includes(w));
 }

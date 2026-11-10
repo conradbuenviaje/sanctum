@@ -88,7 +88,7 @@ test("a write whose outcome is unknown is never called 'nothing was written'", (
 test("uploads: size, form fields, and the answer", () => {
   const big = { name: "scan.pdf", size: 11 * 1024 * 1024 }, small = { name: "a.pdf", size: 1024 };
   assert.equal(uploadSizeProblem(small, 10), "");
-  assert.equal(uploadSizeProblem(big, 10), "“scan.pdf” is over 10 MB, the most the connection service takes. Compress it first.");
+  assert.equal(uploadSizeProblem(big, 10), "“scan.pdf” is over 10 MB, the most Lark takes in one upload. Compress it first.");
   const e = Object.fromEntries(uploadEntries(small, { app: "APP1", table: "tblX" }));
   assert.equal(e.parent_type, "bitable_file");
   assert.equal(e.parent_node, "APP1");

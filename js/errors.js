@@ -85,7 +85,7 @@ export function describeLark(err, o = {}) {
 /* A sentence if the file is over the limit, else "". */
 export function uploadSizeProblem(file, maxMb) {
   return file.size > maxMb * 1024 * 1024
-    ? `“${file.name}” is over ${maxMb} MB, the most the connection service takes. Compress it first.` : "";
+    ? `“${file.name}” is over ${maxMb} MB, the most Lark takes in one upload. Compress it first.` : "";
 }
 
 /* The form fields of an upload. `extra` is required on Bases with advanced

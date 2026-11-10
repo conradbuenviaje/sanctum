@@ -6,7 +6,7 @@
 
 import { ACCOUNTABILITY } from "./config.js";
 import {
-  configValues, configWrites, isAdmin, telegramHandle, rulesBehindDefaults, filterValues, renameRole, ROW, TABLE_NAMES,
+  configValues, configWrites, isAdmin, telegramHandle, rulesBehindDefaults, rulesMissingFromDefaults, filterValues, renameRole, ROW, TABLE_NAMES,
 } from "./accountability.js";
 import { addVariable, updateVariable, deleteVariable } from "./ops.js";
 import { nickKey } from "./mancom.js";
@@ -313,10 +313,31 @@ export function createAdmin(ctx) {
           changed();
         } }, ic("plus"), "Add rule"),
         h("button", { type: "button", class: "btn btn-sm btn-ghost", disabled: !can, onclick: () => { d.rules = clone(ACCOUNTABILITY.rules); changed(); } }, "Use the starting rules")),
+      missingNote(d, can),
       behindNote(d, can),
       h("div", { class: "tbl-wrap" }, h("table", { class: "tbl adm-rules" },
         h("thead", null, h("tr", null, ["On", "Table", "Field", "Required from", "Lost", "Responsible", "Accountable", ""].map(t => h("th", { scope: "col" }, t)))),
         h("tbody", null, rows))));
+  }
+
+  /* Starting rules added after the rules were saved (the saved rules replace the starting
+     ones, so a new one stays off until an admin adds it here). */
+  function missingNote(d, can) {
+    const missing = rulesMissingFromDefaults(d.rules, ACCOUNTABILITY.rules);
+    if (!missing.length) return null;
+    const n = missing.length, one = n === 1;
+    return h("div", { class: "callout callout-info" }, ic("info"),
+      h("div", null,
+        h("p", null, `Sanctum has ${n} starting rule${one ? "" : "s"} the saved rules don't have. Add ${one ? "it" : "them"} unless an admin removed ${one ? "it" : "them"} on purpose:`),
+        h("ul", null, missing.map(m => h("li", null, h("b", null, m.rule.field), ` (${TABLE_NAMES[m.rule.table] || m.rule.table}): R ${m.rule.responsible} · A ${m.rule.accountable}`))),
+        h("button", { type: "button", class: "btn btn-sm", disabled: !can, onclick: () => {
+          for (const m of missing) {
+            const at = m.after ? d.rules.findIndex(r => r.id === m.after) + 1 : 0;
+            d.rules.splice(at, 0, { ...m.rule, on: true });
+          }
+          changed();
+        } }, `Add ${one ? "this rule" : `these ${n}`}`),
+        " ", h("span", { class: "set-help" }, "Then Save changes.")));
   }
 
   /* Rules saved before the starting rules changed who's on them (AM, PM, TRIBE in 2.2.0):

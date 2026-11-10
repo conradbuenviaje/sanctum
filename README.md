@@ -23,6 +23,7 @@ phone and on a PC, and every change is made as you, with your own Lark login.
 | **Invoice Request** (by Account Managers) | moves its Collections row along: **Pending Invoice Request Approval** when filed, **For Collection** when approved |
 | **Project Brief** (any department) | a new **ANDON** row (Project Management's board) |
 | **Project Approval (PAR)** | its Request No. in the **Approval** column of the project's ANDON row |
+| **Project Brief** files (linked in Lark Approval) | uploaded by you into the project's Universe **Other Attachments** |
 
 > **Connected to the live tables.** `APP.env` in `js/config.js` is `"live"`, so the
 > header shows no *Test copy* badge and every push changes real data. See
@@ -40,6 +41,7 @@ phone and on a PC, and every change is made as you, with your own Lark login.
 - [The audit](#the-audit)
 - [The Universe view](#the-universe-view)
 - [The ANDON view](#the-andon-view)
+- [The Tagging page](#the-tagging-page)
 - [The row editor](#the-row-editor)
 - [The Collections view](#the-collections-view)
 - [Settings](#settings)
@@ -174,12 +176,14 @@ Locally: put the same values in `.env`, then `npm run notify -- --dry-run`.
 
 ## Using Polaris
 
-1. **Log in with Lark.** A login lasts about 2 hours and belongs to this browser tab
-   (another tab logs in on its own, in one click). The clock in the header shows how
+1. **Log in with Lark.** A login lasts about 2 hours and is shared with Fetch and Suppliers:
+   log in to any of them and you're logged in to all three in this browser, in every tab,
+   with one timer (closing the tab doesn't log you out). The clock in the header shows how
    long you have left (it turns amber in the last 10 minutes), a message stays on screen
    in the last 5, and Settings shows the exact time it ends. **Log in again** there to
    get a fresh 2 hours. A push that's already running isn't cut off by the clock.
-2. **Briefs / PARs** tabs list what isn't in the Universe yet; **Invoices** lists
+2. The **Universe** tab lists the briefs and PARs that aren't in the Universe yet, in one
+   list (a PAR card says *PAR …*; old `#/briefs` and `#/pars` links open it); **Invoices** lists
    every change Collections needs (see [Invoices](#invoices-the-collections-lifecycle)).
    Newest first; search narrows the list.
 
@@ -211,7 +215,9 @@ Locally: put the same values in `.env`, then `npm run notify -- --dry-run`.
    - *PAR:* if several Universe rows share the code, you choose the row.
    - *Invoice:* pick another Collections row (or a new one) if Polaris guessed wrong;
      a new row's **AR Name** can be edited (for example add "Downpayment"). For an
-     approved request you can add the invoice details (number, SI, date, file).
+     approved request (its row goes to *For Collection*) the **Collection Date** is needed:
+     the push stays off until it's filled. You can also add the invoice details (number,
+     SI, date, file).
    - *Audit (Fill):* each blank the brief can fill, ticked and pre-filled; edit or untick.
      A blank **Signed CE (PDF)** asks for the file(s), which upload when the push runs.
    The sheet's button (**Push to Universe**, **Fill 2 fields**, …) closes it at once:
@@ -401,12 +407,28 @@ link. Only a blank Approval is written: if someone filled it meanwhile, theirs s
 and the queue says so. The column is `andonApproval` in [`js/config.js`](js/config.js);
 if ANDON has no column by that name, there are no cards.
 
+### The brief's files → the Universe
+
+The brief's files live in Lark Approval: its **Attachment (Project Brief, Pitch Deck)**
+column is a link to them there (*1 attachment(s)*), and Polaris's login can't read Lark
+Approval. So the files go across by hand. On the **Universe** tab, after the briefs and
+PARs: every Universe row whose **Other Attachments** is blank and whose project's brief
+has that link (the newest brief with its Project Code that wasn't recalled, rejected or
+cancelled) gets a card, newest brief first, whatever the project's Status.
+
+The card's link opens the files in Lark Approval: download them, then **Upload** and add
+them (up to 20 MB each). The push uploads them to the Universe as you and puts them in
+Other Attachments, only while it's still blank: if someone filled it meanwhile, theirs
+stays and the queue says so. The columns (and any statuses to leave out) are `briefFiles` in
+[`js/config.js`](js/config.js); if either table has no column by that name, there are
+no cards.
+
 ### Collections changes
 
 | Change | Collections columns written |
 | ------ | --------------------------- |
 | Won → new row | AR Name (the project, editable), Project Code, Invoice Amount = the Universe's **Amount (VAT-Inc.)** in PHP, Currency `PHP`, Status `For Invoicing`, Business Unit (the Universe's, matched to a Collections option) |
-| Filed → its row | Invoice Request (the number) and Status `Pending Invoice Request Approval`; nothing else |
+| Filed → its row | Invoice Request (the number), Status `Pending Invoice Request Approval`, and Invoice Amount and Currency when the request's differ (a For Invoicing row starts as the Universe's PHP amount; the card's note says what changes) |
 | Filed → new row | AR Name, Project Code, Invoice Amount and Currency (as filed), Invoice Request, Status `Pending…`, Business Unit |
 | Approved → its row | Status `For Collection`; Invoice Amount and Currency when the request's differ; the request number if the row didn't have it; any invoice details you add |
 | Approved → a row recorded by hand | Invoice Request only (plus any invoice details you add) |
@@ -460,11 +482,28 @@ and set Status to Stalled*). Status isn't a blank, so it's only changed if the r
 Lark still says what the card showed: if someone changed it meanwhile, theirs is kept
 and the result says so.
 
+**The PM must be the same in the Universe and ANDON.** A project in both whose
+Universe **PM** and ANDON **PM (LEAD)** differ (in any of its ANDON rows), or where
+either is blank, gets an Audit card showing both. **Fill** asks for one PM, filled in
+with ANDON's (else the Universe's), and sets it in the Universe and in every ANDON row
+of the project; it stays off while the PM is blank. Before writing, both tables are
+re-read: if either PM was changed in Lark meanwhile, nothing is written anywhere and the
+queue says which. The columns are `pmSync` in [`js/config.js`](js/config.js).
+
+**The CE link must be the same in the Universe and ANDON.** The same check for the
+Universe's **Internal CE (Sheet)** and ANDON's **Working CE** (both URL columns): a
+project in both whose links differ (in any of its ANDON rows), or where either is
+blank, gets an Audit card showing both links. **Fill** asks for one link, filled in
+with ANDON's (else the Universe's; with two different links, a button picks either;
+with both blank, you paste it). It must start with `https://`. It's written to the
+Universe and every ANDON row of the project, after both are re-read, exactly like the
+PM. The columns are `ceSync` in [`js/config.js`](js/config.js).
+
 **Signed projects must have their signed CE on file.** A Universe project whose
 Status is *Fully Closed*, *For Closing*, *For Collection* or *Signed CE* gets a card
 when its **Signed CE (PDF)** attachment is blank, even without a brief (*Won - Awaiting
 CE Signature* isn't asked: nothing is signed yet). In the Fill sheet, **Add the signed
-CE** picks the file (PDF, up to 10 MB each; add several if the CE is in parts). The
+CE** picks the file (PDF, up to 20 MB each; add several if the CE is in parts). The
 files upload to Lark (as you, through the connection service, like invoice files)
 when the push runs, before anything is written, so a failed upload writes nothing and
 **Retry** in the queue doesn't upload a file twice. The Fill is refused while the row
@@ -493,8 +532,18 @@ creates it).
     **bottom of the list** (folded; click to open). The tag is added to whatever the
     cell says in Lark at that moment, so other tags in it stay. It's instant, with
     **Undo**; if Lark refuses, the card moves back and the message says why.
+  - **Mark as another tag…**: type any tag (the custom tags and the tags in use are
+    suggested; a custom tag typed in any case is that tag). One that isn't a custom tag
+    yet is added to Settings > Custom tags first (for everyone; it needs write access to
+    the Variables table), then the card is marked with it like the others. A tag that
+    looks like a misspelling of one in use (*Federal Lnad*) offers that one first;
+    **Mark** again keeps the new spelling.
   - **Hide on this device**: as before, nothing is written to Lark, and the card
     comes back if another cell of that row goes blank.
+- **PM** and **CE** cards have the same **Hide ▾**. They span the Universe and ANDON,
+  but the tag is written to the project's **Universe** row only (ANDON has no Tags
+  column); Unmark takes it off there. *Hide on this device* keeps the card away until
+  either PM (or either CE link) changes.
 
   A card in a tag group has **Unmark** (takes that tag off; the card is back in the
   list) and **Fill**. Only tags in the custom tag list count: other words in the Tags
@@ -543,6 +592,58 @@ newest projects are on top; numbers compare as numbers, so P1000 is above P0999;
 click the column to flip it to A-Z).
 Columns: Project, Project Code, AM, PM (LEAD), TRIBE, Event Start.
 
+## The Tagging page
+
+**Tagging**, in the top bar before *Data Audit*: every Universe project and its **Tags**
+(plain text, tags separated by commas), newest Project Code first, to tag projects by hand without
+misspelling a tag:
+
+- **The tags in use**, above the table, each with how many projects have it, and
+  *No tags*. A click shows only those projects (again: all of them). A tag that looks
+  like a misspelling of another (the same letters, or a letter or two off:
+  *Federal Lnad*, *federal-land*) is marked ⚠, and says which one on hover.
+- **× on a tag** takes it off that project. **+** opens a box that suggests the tags in
+  use; Enter adds it. A tag typed in another case takes the spelling in use
+  (*booth* → *Booth*); a new tag that looks like one in use asks first (*Use "Event"* or
+  *Add "Evnt" as a new tag*).
+- Each change is written at once and read back, like *Mark as …*: the row is re-read
+  and only that tag added or taken out, so tags someone else added meanwhile stay.
+  **Undo** in the message puts it back. A click elsewhere on the row opens it in the
+  row editor.
+- The search looks through the code, project, status and tags.
+
+## The Files page
+
+**Files**, in the top bar after *Tagging*: the files kept in Lark, to download many at
+once. Nothing is written to Lark. Three parts:
+
+- **Universe**: every project with a file in **Signed CE (PDF)** or **Other
+  Attachments**, newest Project Code first.
+- **Collections**: every row with a file in **Invoice** (the project's name comes from
+  the Universe; the row's AR Name if the code isn't there).
+- **Approvals**: the **Project Brief**, **Project Approval** and **Invoice Request**
+  rows whose attachments are in Lark Approval. Polaris can't download those, so each is a
+  link that opens the approval; download them there. The columns are the URL columns
+  with *attach* in their name (`RULES.filesPage.approvalColumns`).
+
+Click a Universe or Collections row (or its box) to put it in the **Download** list on
+the right; **Select all** takes every row the search shows. One file can also be
+downloaded on its own from its name. The list says how many files and how big; with
+both kinds of file in it, *Include* leaves a kind out. **Download zip** fetches each
+file through the connection service (three at a time, as you, like a row's own download
+button) and saves one zip, `polaris-files-YYYY-MM-DD.zip`, with the files renamed:
+
+| Column | Name in the zip |
+|---|---|
+| Signed CE (PDF) | `signed_ce_{project code}_{project name}_{n}.pdf` |
+| Other Attachments | `other_{project code}_{project name}_{n}.{its extension}` |
+| Invoice (Collections) | `{project code}_{invoice number}_{n}.{its extension}` (`no-invoice-number` when the row has none) |
+
+`n` counts from 1 for each name (two files on one invoice give `_1` and `_2`). Characters a file name can't have are taken out of the project name. A file keeps
+its own extension (a signed CE without one gets `.pdf`). A file Lark won't hand over is
+left out, and the message names it. The zip is built in the browser (`js/zip.js`,
+stored, not compressed) and is capped at 2 GB: take rows out, or download in parts.
+
 ---
 
 ## The source tables
@@ -582,7 +683,7 @@ column (not only the ones the table shows), and every typed one can be changed:
 | Date | the date field (see *Dates* below); it sets the day, at midnight Manila |
 | Person | pick from everyone Polaris knows (the row's own people first) |
 | Checkbox, URL | a tick box, an address |
-| Attachment | the files it has (click one to download it; × takes it out) and **Add files** (up to 10 MB each) |
+| Attachment | the files it has (click one to download it; × takes it out) and **Add files** (up to 20 MB each) |
 
 **Files download from any row Polaris shows** (beside a push sheet, in the row editor,
 or a source table's record): click the file. It comes through the connection service,
@@ -618,7 +719,7 @@ are filled in by hand. If the invoice is already issued, add them when you **Pus
 (*Add invoice details* in the sheet; files upload before the row is created, so a
 failed upload writes nothing). Otherwise add them later with the **+** (or the
 pencil, to edit) on the Collections row: the sheet saves only what you changed, uploads files
-first (PDF or image, up to 10 MB each, the most the connection service takes),
+first (PDF or image, up to 20 MB each, the most Lark takes in one upload),
 then reads the row back to confirm. Clearing a field empties it in Lark.
 
 **Dates.** Every date field takes a typed date (*Oct 14, 2026*, *2026-10-14*,
@@ -638,7 +739,7 @@ The gear in the top bar. It works logged out too.
 
 | Section | What it does |
 | ------- | ------------ |
-| **Account** | Who you are, when your login ends, **Log in again** (a fresh 2 hours) and **Log out**. Log out only clears Polaris in this tab; you stay logged in to Lark itself. |
+| **Account** | Who you are, when your login ends, **Log in again** (a fresh 2 hours) and **Log out**. Log out logs you out of every Mineski tool in this browser (Polaris, Fetch and Suppliers share the login); you stay logged in to Lark itself. |
 | **Appearance** | Light, Dark or System. |
 | **Connections** | **Connection service**: Awake (with its version once it reports one), Waking up, Out of date or Unreachable, with **Wake up** / **Try again**. **Lark tables**: connected, with the row count, or the column problems found. One row per table, each with **Open in Lark**. |
 | **Advanced** (only on a page opened from this computer) | Another connection service address, saved in this browser. Only an `https://` address, or an `http://` one on this computer. A `?lark=<address>` link does the same for one tab, and `?reset` clears it. While any override is active the top bar shows a red **Overridden** badge (hover it to see what). |
@@ -654,8 +755,14 @@ What Polaris keeps in this browser (every key starts with `polaris.`, all values
 | `draft` | this browser | what you typed in a push sheet you cancelled, with its retry token, for up to 7 days. Files aren't kept. |
 | `queue` | this browser | pushes waiting in the queue (or that didn't go through): what each writes, with its retry token, for up to 2 days. Finished pushes and files that hadn't uploaded aren't kept. Not cleared by **Clear local data**: use **Remove** on the queue page. |
 | `auditHidden`, `uniSort`, `uniCollapsed`, `uniOpened`, `colSort`, `colCollapsed`, `andonCodeSort`, `srcSort` | this browser | hidden audit cards, sort order, folded groups |
-| `auth.token`, `auth.pending`, `auth.user` | this tab | your login, a login in progress, your name and picture. Gone when the tab closes. |
+| `auth.pending` | this tab | a login in progress (it finishes in the tab that started it) |
 | `override.lark` | this tab | the `?lark=` link override |
+
+The login itself is **shared by the Mineski tools on this site** (Polaris, Fetch, Suppliers):
+`mineski.auth.token` (your login) and `mineski.auth.user` (your name and picture) in this
+browser, through `js/session.js` (copied unedited from `design-ref/mineski-systems-design/assets/`).
+It lasts until it ends, about 2 hours after you logged in, or until you log out in any of them.
+A login kept by an older Polaris in its tab (`polaris.auth.token`) moves over on the first load.
 
 Polaris doesn't keep a copy of the tables: every load reads them fresh from Lark.
 
@@ -729,8 +836,10 @@ Lark app `cli_aab0716138b8ded3` (always `127.0.0.1`, never `localhost`: another
 address needs registering too). `tools/serve.py` turns caching off and serves `.js`
 as JavaScript (some Windows machines serve it as text, and module scripts then
 refuse to run); plain `python -m http.server` does neither. The connection service
-(the Lark proxy on Render) sleeps when idle, so the first load can take up to a
-minute; Polaris says so while it waits.
+(the Lark proxy) runs on Cloudflare, which never sleeps, with a copy on Render as the
+backup. If the Cloudflare one can't be reached Polaris moves to Render (reads at once;
+pushes only before they're sent, never twice), and then the first load can take up to a
+minute while Render wakes up; Polaris says so while it waits.
 
 ---
 
@@ -836,10 +945,14 @@ the live tables.
   logins are safe (they're bound to your tab by PKCE), but until the proxy adds the secret only
   to the login code exchange (see `SYSTEMS-PARITY.md`, P0) the protection of the data is Lark's
   permissions on the app, not Polaris. The Node tools no longer need that route.
-- **Your login lives in this tab only** (`sessionStorage`): closing the tab ends it, and each new tab
-  logs in on its own (one click if Lark still knows you). It is sent only to the connection service,
-  in an `Authorization` header, never in an address. **Log out is local**: it clears Polaris here;
-  Lark has no way to revoke a login, so it still lasts up to 2 hours if someone copied it.
+- **One login for every Mineski tool on this site** (`localStorage` `mineski.auth.token`): log in to
+  Polaris, Fetch or Suppliers and every tab of all three is logged in, with one timer. Closing the
+  tab doesn't log you out (the login lasts about 2 hours), so on a shared computer use **Log out**.
+  Every page on `mineski-stephen.github.io` can read that storage, so only Mineski tools are
+  published there. The token is sent only to the connection service, in an `Authorization` header,
+  never in an address. **Log out is local**: it logs you out of every Mineski tool in this browser
+  (other open tabs show the login screen at once, after any push already running); Lark has no
+  way to revoke a login, so it still lasts up to 2 hours if someone copied it.
 - **The page may only talk to itself and the connection service**: a `Content-Security-Policy` meta lists them
   (and local addresses for testing), and a `referrer` meta keeps addresses private.
 - **Overrides work only on a local page**, accept only `https` (or local `http`) addresses, and always show a red badge.
@@ -854,9 +967,10 @@ the live tables.
 
 ## Known limits
 
-- **Attachments.** The brief's attachments live in Lark Approval, which this app
-  has no permission to read, so their files can't be copied. Add links by hand
-  under *Add other links* if needed.
+- **Attachments.** The brief's files live in Lark Approval, which this app has no
+  permission to read, so they're downloaded and uploaded by hand (see *The brief's
+  files → the Universe*). Lark takes files up to 20 MB through
+  this app: upload bigger ones in Lark.
 - **Client** isn't on the Project Brief, so it's typed in the sheet (or left for later).
 - **Old PARs and invoices.** Nothing in those tables is marked IGNORE yet, so older
   ones for projects in the Universe show up once. Push or ignore them. Approved
@@ -889,11 +1003,13 @@ the live tables.
 | *Polaris couldn't start.* | Reload. If it keeps happening, open Polaris from its web address (not a saved file). If you just deployed, a file is probably missing or not listed in the import map in `index.html`: run `npm run check:shell`. |
 | People report an old version (the number beside "Polaris" in the top bar is lower than the newest entry in `CHANGELOG.md`) | The page and every script are fetched fresh on each visit, so this is almost always the host's own cache (GitHub Pages can take a few minutes after a push) or an old tab left open. Reload the tab; in the browser console, `APP_BUILD` changes on each load. Check the files on the host are the new ones. |
 | *Waking up the connection… This can take up to a minute.* | Nothing; the free Render service is starting. It retries for up to 3 minutes. |
-| *Polaris can't reach its connection service.* (red box, mentions an ad blocker) | Allow `lark-proxy-dwiw.onrender.com` in your ad blocker or privacy extension (or pause it on this page), then **Reload**. |
+| *Polaris can't reach its connection service.* (red box, mentions an ad blocker) | Allow `lark-proxy.stephen-lin.workers.dev` (and `lark-proxy-dwiw.onrender.com`, the backup) in your ad blocker or privacy extension (or pause it on this page), then **Reload**. |
+| Settings > Connections: "… (the backup: the usual one can't be reached)" | The connection service on Cloudflare didn't answer, so Polaris is using the copy on Render. Everything works; the first call after a while may wait for Render to wake up. If it lasts, check the Worker on Cloudflare (its Logs say why). |
 | *Polaris can't reach its connection service (…). It may still be waking up* | Try again in a moment. If it stays, check `npm run check:proxy` or ask the admin. |
 | *Out of date (…). Ask the admin to redeploy it.* (Settings > Connections) | The connection service is older than this page needs (`SERVICES.lark.min` in `js/config.js`). The admin redeploys it; see its README. |
 | *This address (…) isn't registered on the Lark app* on the login screen | Add that exact address under *Security Settings > Redirect URLs* for the app. |
 | *Your login ended after about 2 hours.* | Log in again. Watch the clock in the header; *Log in again* in Settings renews it early. |
+| *Your login ended in another tab.* | You (or someone at this computer) logged out of Polaris, Fetch or Suppliers in another tab, or Lark ended the login there. They share one login, so log in again in any of them. |
 | *Your login has ended. Log in again.* | Lark said the login is over (it expired, or was ended in Lark). Log in again; your drafts are still there. |
 | *Your login ends at 4:30 PM.* (stays on screen) | Log in again to keep working without a break. |
 | *Your login is about to end, so this wasn't sent.* | Log in again, then try it again. |
@@ -906,6 +1022,7 @@ the live tables.
 | *Polaris couldn't confirm it. Check it in Lark before retrying.* (queue) | The answer never came back and Lark couldn't be re-read. Look at the row in Lark; **Retry** only if it isn't there. |
 | A card you pushed isn't in the list | It's in the queue (hover **Queue**). **Remove** there brings it back. |
 | *These columns don't match what Polaris expects…* | A column was renamed or changed type (common when switching to production). Fix the table, or run `npm run setup` for a missing column or option. |
+| A greyed-out **Fill** or **Push** on a card | Hover it: it says which column is missing or wrong (the tab's red box lists them too). Only the cards that need that column are off. |
 | *Your login can only read the tables.* | Log in again so Lark grants editing. |
 | *Lark says your account can't open or edit this Base.* | Ask the Base owner for edit access. |
 | *Your account isn't allowed to change this table (its permissions are restricted).* | Ask the Base owner. |
@@ -922,7 +1039,7 @@ the live tables.
 | An ANDON audit card has a plain **Hide**, no menu | That's on purpose: custom tags are Universe-only (`tags.tables` in `js/config.js`). |
 | *Polaris couldn't find the custom tags in the Variables table.* (Settings) | The Variables table needs a column with `custom_tag` in it and a value column (ideally named **Variable** and **Value**). |
 | *Add the file for Signed CE (PDF)…* (Fill) | Use **Add the signed CE** to pick the PDF, or untick **Signed CE (PDF)** to fill the card's other blanks without it. |
-| *"…" is over 10 MB* (Fill) | Compress the PDF (or split it into parts and add each one), then add it again. |
+| *"…" is over 20 MB* (Fill) | Compress the PDF (or split it into parts and add each one), then add it again. |
 | *Someone had already filled …, so those were left as they were.* (after Fill) | The audit only fills blank cells; those weren't blank any more. |
 | Red **Overridden** badge in the top bar | This browser is using another connection service address (Settings > Advanced, or a `?lark=` link). Clear it there, or open the page with `?reset`. |
 | Red *Preview mode* badge | `?preview` is on: the data is a snapshot and nothing is sent to Lark. Open Polaris without `?preview`. |
@@ -989,13 +1106,17 @@ design language first, copy them over unedited, then `npm run check:shell` confi
 | `js/errors.js` | Errors as facts (`LarkError`), the dead-token codes, and one sentence for every code (`describeLark`). Pure. |
 | `js/service.js` | Which addresses may override the connection service, and whether its `GET /` answer means awake and recent enough. Pure. |
 | `js/settings.js` | The saved connection service address and `?lark=` / `?reset` link overrides (local pages only). |
-| `js/auth.js` | Lark login (OAuth + PKCE), the session, and how a session ends. |
+| `js/auth.js` | Lark login (OAuth + PKCE), the session, work in flight (`track`), and how a session ends, here or in another tab. |
+| `js/session.js` | The login shared by every Mineski tool on the site. Copied unedited from `design-ref/mineski-systems-design/assets/`. |
 | `js/app.js` | Routes, header, loading, Settings, the session clock, and what happens after a push (quietly, for the queue). |
 | `js/inbox.js` | The cards, the push sheet (with the BD picker), Ignore / Undo, and the push itself (`perform`) that the queue runs. |
 | `js/queue.js` | The push queue: runs pushes one at a time, re-checks uncertain ones, keeps waiting ones in this browser; the Queue tab, its hover list and the queue page. |
 | `js/rowdoc.js` | The row beside the push sheet: the Lark row as the push will leave it, changes highlighted. |
 | `js/universe.js` | The Universe table. |
 | `js/andon.js` | The ANDON table. |
+| `js/tagging.js` | The Tagging page: every Universe project and its tags, added and taken off one at a time. |
+| `js/files.js` | The Files page: the Universe's and Collections' files, picked into a list and saved as one zip; the approvals' links. |
+| `js/zip.js` | Makes a zip in the browser (stored, UTF-8 names), for the Files page. |
 | `js/sources.js` | The Project Brief, Project Approval and Invoice Request tables (read-only), shown with the table switcher; a row opens read-only (`inbox.js` `openView`). |
 | `js/collections.js` | The Collections table and its invoice details sheet. |
 | `js/icons.js`, `js/ui.js` | The shared Mineski icons and UI helpers: unedited copies of `design-ref/mineski-design-language/assets/`. Change them there, then copy them over. |
